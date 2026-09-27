@@ -1,37 +1,60 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
-const hasUpstashCredentials = Boolean(
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-);
+interface GatewayLimiters {
+  client: Ratelimit;
+  tool: Ratelimit;
+}
 
-const redis = hasUpstashCredentials ? Redis.fromEnv() : null;
+let gatewayLimiters: GatewayLimiters | null = null;
 
-const clientLimiter = redis
-  ? new Ratelimit({
+function getEnvironmentValue(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+
+  const hasWrappingQuotes =
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"));
+
+  return hasWrappingQuotes ? value.slice(1, -1).trim() : value;
+}
+
+function getGatewayLimiters(): GatewayLimiters | null {
+  if (gatewayLimiters) return gatewayLimiters;
+
+  const url = getEnvironmentValue("UPSTASH_REDIS_REST_URL");
+  const token = getEnvironmentValue("UPSTASH_REDIS_REST_TOKEN");
+  if (!url || !token) return null;
+
+  const redis = new Redis({ url, token });
+  gatewayLimiters = {
+    client: new Ratelimit({
       redis,
       limiter: Ratelimit.slidingWindow(60, "1 m"),
       prefix: "mockagent:gateway:client",
-    })
-  : null;
-
-const toolLimiter = redis
-  ? new Ratelimit({
+    }),
+    tool: new Ratelimit({
       redis,
       limiter: Ratelimit.slidingWindow(120, "1 m"),
       prefix: "mockagent:gateway:tool",
-    })
-  : null;
+    }),
+  };
+
+  return gatewayLimiters;
+}
 
 export function isGatewayRateLimitConfigured() {
-  return clientLimiter !== null && toolLimiter !== null;
+  return Boolean(
+    getEnvironmentValue("UPSTASH_REDIS_REST_URL") &&
+      getEnvironmentValue("UPSTASH_REDIS_REST_TOKEN")
+  );
 }
 
 export async function checkGatewayRateLimit(scope: "client" | "tool", key: string) {
-  const limiter = scope === "client" ? clientLimiter : toolLimiter;
-  if (!limiter) {
+  const limiters = getGatewayLimiters();
+  if (!limiters) {
     throw new Error("Gateway rate limiting is not configured.");
   }
 
-  return limiter.limit(key);
+  return limiters[scope].limit(key);
 }
