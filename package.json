@@ -1,0 +1,45 @@
+{
+  "name": "mockagent",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "db:types": "supabase gen types typescript --project-id \"$SUPABASE_PROJECT_ID\" --schema public > types/database.ts"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.2",
+    "@radix-ui/react-label": "^2.1.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "@radix-ui/react-tabs": "^1.1.1",
+    "@radix-ui/react-toast": "^1.2.2",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.45.4",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.39.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.446.0",
+    "next": "16.3.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwind-merge": "^2.5.2",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.3.6",
+    "postcss": "^8.5.23",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.5.4"
+  }
+}
