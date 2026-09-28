@@ -12,7 +12,7 @@ Supabase (Postgres, Auth, Realtime) · AJV
 ## 1. Supabase setup
 
 1. Create a project at https://supabase.com.
-2. In the SQL editor, run `schema.sql` (tables, RLS policies, `tool_stats` view).
+2. In the SQL editor, run `schema.sql` (tables, workspaces, RLS policies, usage views, and quota/retention functions). Re-run it after updates; the additions are designed to be safe for existing data.
 3. **Enable Realtime** on the `logs` table: Database → Replication → toggle
    `public.logs` on. This powers the live-updating log table on the dashboard.
 4. Auth → Providers: enable **GitHub** OAuth if you want that login option
@@ -31,6 +31,12 @@ SUPABASE_SERVICE_ROLE_KEY=
 NEXT_PUBLIC_APP_URL=
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
+CRON_SECRET=
+DODO_PAYMENTS_API_KEY=
+DODO_PAYMENTS_WEBHOOK_KEY=
+DODO_PAYMENTS_ENVIRONMENT=test_mode
+DODO_PAYMENTS_SOLO_PRODUCT_ID=
+DODO_PAYMENTS_TEAM_PRODUCT_ID=
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` is used only in `lib/supabase/server.ts`
@@ -80,6 +86,17 @@ quick sanity check in a browser.
    `https://mockagent.yourdomain.com`) — it's used to build the gateway URLs
    shown in the dashboard.
 4. Deploy.
+5. Set `CRON_SECRET` in Vercel. Vercel sends it to the scheduled cleanup route as a bearer token.
+
+## 6. Scenarios, keys, and teams
+
+- Add ordered JSON Schema match scenarios to a mock tool. The first match returns its response; otherwise the default response is returned.
+- Successful logs keep response snapshots. Replay compares the current result with that saved response without adding a gateway log.
+- API keys are displayed only once and stored as SHA-256 hashes. Turn on `Key required` per tool, then send `Authorization: Bearer <key>`. Monthly limits are enforced atomically.
+- Workspaces share tools and logs. Owners/admins can invite by email, manage API keys, and set retention to 7, 30, or 90 days.
+- Daily analytics show calls, schema violations, and average latency. Vercel runs the cleanup cron at 03:00 UTC; logs older than the workspace retention period are removed.
+- Dodo Payments plans: Free (1,000 calls, 3 tools), Solo ($19/month; 20,000 calls, 25 tools), and Team ($79/month; 100,000 calls, 250 tools, 10 seats). Limits are enforced in server actions and Postgres.
+- In Dodo Payments, create monthly subscription products matching the plan amounts. Set each product ID in `DODO_PAYMENTS_SOLO_PRODUCT_ID` or `DODO_PAYMENTS_TEAM_PRODUCT_ID`, configure the API key and `test_mode`/`live_mode`, then register `https://<your-domain>/api/billing/webhook` for `subscription.active`, `subscription.updated`, `subscription.past_due`, `subscription.on_hold`, `subscription.paused`, `subscription.unpaused`, `subscription.renewed`, `subscription.plan_changed`, `subscription.cancelled`, `subscription.expired`, and `subscription.failed`. Set the endpoint signing secret as `DODO_PAYMENTS_WEBHOOK_KEY` and redeploy.
 
 ## Project structure
 
@@ -108,5 +125,3 @@ types/database.ts                   Typed Supabase schema
   in a `Map<toolId, ValidateFunction>` keyed on the schema's `updated_at`.
 - **Trusted client IPs**: when self-hosting, configure the reverse proxy to
    overwrite `x-forwarded-for`; the gateway uses it for per-client limits.
-- **Log retention**: `logs` grows unbounded; consider a scheduled job or
-  Supabase cron to prune rows older than N days.

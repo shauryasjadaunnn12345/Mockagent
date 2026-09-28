@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/server";
 import {
   checkGatewayRateLimit,
   isGatewayRateLimitConfigured,
 } from "@/lib/rate-limit";
 import { validateAgainstSchema } from "@/lib/validators";
+import { parseScenarios, resolveScenario } from "@/lib/scenarios";
 import type { ExecutionStatus, Json } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +14,75 @@ export const runtime = "nodejs";
 
 interface RouteParams {
   params: Promise<{ toolId: string }>;
+}
+
+interface ApiKeyProtectedTool {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  require_api_key: boolean;
+}
+
+async function enforceApiKey(
+  request: NextRequest,
+  tool: ApiKeyProtectedTool
+): Promise<{ apiKeyId: string | null; response: NextResponse | null }> {
+  if (!tool.require_api_key) return { apiKeyId: null, response: null };
+
+  const authorization = request.headers.get("authorization");
+  const token = authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
+  if (!token) {
+    return {
+      apiKeyId: null,
+      response: NextResponse.json({ error: "A valid bearer API key is required." }, { status: 401 }),
+    };
+  }
+
+  const supabase = createAdminClient();
+  const { data: apiKey } = await supabase
+    .from("api_keys")
+    .select("id, key_hash, revoked_at")
+    .eq("workspace_id", tool.workspace_id)
+    .eq("key_prefix", token.slice(0, 24))
+    .maybeSingle();
+
+  const tokenHash = createHash("sha256").update(token).digest();
+  const storedHash = apiKey ? Buffer.from(apiKey.key_hash, "hex") : Buffer.alloc(0);
+  const validHash = storedHash.length === tokenHash.length && timingSafeEqual(storedHash, tokenHash);
+  if (!apiKey || apiKey.revoked_at || !validHash) {
+    return {
+      apiKeyId: null,
+      response: NextResponse.json({ error: "A valid bearer API key is required." }, { status: 401 }),
+    };
+  }
+
+  return { apiKeyId: apiKey.id, response: null };
+}
+
+async function enforceWorkspaceQuota(
+  supabase: ReturnType<typeof createAdminClient>,
+  workspaceId: string,
+  apiKeyId: string | null
+) {
+  const { data: usage, error } = await supabase.rpc("consume_gateway_call", {
+    target_workspace_id: workspaceId,
+    target_api_key_id: apiKeyId,
+  });
+  if (error || usage === null) {
+    console.error("MockAgent: workspace usage check failed", error?.message);
+    return NextResponse.json({ error: "Workspace usage could not be checked." }, { status: 503 });
+  }
+  if (usage < 0) {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const nextMonth = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+    const retryAfter = Math.max(1, Math.ceil((nextMonth.getTime() - Date.now()) / 1000));
+    return NextResponse.json(
+      { error: "Monthly workspace or API key call limit reached." },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+  return null;
 }
 
 function rateLimitUnavailable() {
@@ -109,7 +180,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const { data: tool, error: toolError } = await supabase
     .from("tools")
-    .select("id, user_id, name, json_schema, mock_response, is_active")
+    .select("id, user_id, workspace_id, name, json_schema, mock_response, scenarios, is_active, require_api_key")
     .eq("id", toolId)
     .maybeSingle();
 
@@ -127,9 +198,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const toolRateLimitResponse = await enforceToolRateLimit(tool.id);
-  if (toolRateLimitResponse) return toolRateLimitResponse;
-
   if (!tool.is_active) {
     return NextResponse.json(
       { error: `Tool "${tool.name}" is currently disabled.` },
@@ -137,13 +205,31 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
+  const apiKeyCheck = await enforceApiKey(request, tool);
+  if (apiKeyCheck.response) return apiKeyCheck.response;
+
+  const toolRateLimitResponse = await enforceToolRateLimit(tool.id);
+  if (toolRateLimitResponse) return toolRateLimitResponse;
+
+  const workspaceQuotaResponse = await enforceWorkspaceQuota(
+    supabase,
+    tool.workspace_id,
+    apiKeyCheck.apiKeyId
+  );
+  if (workspaceQuotaResponse) return workspaceQuotaResponse;
+
   const { valid, errors } = validateAgainstSchema(
     tool.json_schema as Record<string, unknown>,
     payload
   );
 
+  const scenario = valid
+    ? resolveScenario(parseScenarios(tool.scenarios), payload)
+    : null;
+
   const latencyMs = Math.round(performance.now() - startedAt);
   const status: ExecutionStatus = valid ? "SUCCESS" : "SCHEMA_VIOLATION";
+  const responseBody = valid ? scenario?.response ?? tool.mock_response : null;
 
   // Fire-and-forget-ish logging — we still await it so latency_ms in the log
   // reflects real gateway time, but a logging failure never blocks the
@@ -152,7 +238,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     tool_id: tool.id,
     user_id: tool.user_id,
     payload: (payload ?? {}) as Json,
+    workspace_id: tool.workspace_id,
+    response_body: responseBody as Json | null,
+    api_key_id: apiKeyCheck.apiKeyId,
     status,
+    scenario_name: scenario?.name ?? null,
     error_details: valid
       ? null
       : (JSON.parse(JSON.stringify({ errors })) as Json),
@@ -177,10 +267,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  return NextResponse.json(tool.mock_response, {
+  return NextResponse.json(responseBody, {
     status: 200,
     headers: {
       "x-mockagent-status": "SUCCESS",
+      ...(scenario ? { "x-mockagent-scenario": scenario.name } : {}),
       "x-mockagent-latency-ms": String(latencyMs),
     },
   });
@@ -199,13 +290,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const supabase = createAdminClient();
   const { data: tool, error } = await supabase
     .from("tools")
-    .select("id, name, description, json_schema, is_active")
+    .select("id, user_id, workspace_id, name, description, json_schema, is_active, require_api_key")
     .eq("id", toolId)
     .maybeSingle();
 
   if (error || !tool) {
     return NextResponse.json({ error: "Tool not found." }, { status: 404 });
   }
+
+  const apiKeyCheck = await enforceApiKey(request, tool);
+  if (apiKeyCheck.response) return apiKeyCheck.response;
 
   const toolRateLimitResponse = await enforceToolRateLimit(tool.id);
   if (toolRateLimitResponse) return toolRateLimitResponse;
@@ -214,6 +308,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     tool: tool.name,
     description: tool.description,
     is_active: tool.is_active,
+    require_api_key: tool.require_api_key,
     expected_json_schema: tool.json_schema,
     usage: "POST tool-call arguments as JSON to this same URL.",
   });

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { toggleToolActive, deleteTool } from "@/app/actions/tools";
+import { toggleToolActive, deleteTool, setToolRequireApiKey } from "@/app/actions/tools";
 import type { Tool } from "@/types/database";
 import { Copy, Check, Trash2 } from "lucide-react";
 
@@ -63,6 +63,20 @@ export function ToolList({ tools, appUrl }: ToolListProps) {
                 }
               >
                 {tool.is_active ? "Disable" : "Enable"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isPending}
+                aria-pressed={tool.require_api_key}
+                title="Toggle whether callers must provide an API key"
+                onClick={() =>
+                  startTransition(() => {
+                    setToolRequireApiKey(tool.id, !tool.require_api_key);
+                  })
+                }
+              >
+                {tool.require_api_key ? "Key required" : "Open access"}
               </Button>
               <Button
                 variant="destructive"

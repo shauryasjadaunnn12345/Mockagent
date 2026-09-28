@@ -17,31 +17,43 @@ export type Database = {
       logs: {
         Row: {
           created_at: string
+          api_key_id: string | null
+          workspace_id: string
           error_details: Json | null
           id: string
           latency_ms: number
           payload: Json
+          response_body: Json | null
           status: string
+          scenario_name: string | null
           tool_id: string
           user_id: string
         }
         Insert: {
           created_at?: string
+          api_key_id?: string | null
+          workspace_id: string
           error_details?: Json | null
           id?: string
           latency_ms?: number
           payload?: Json
+          response_body?: Json | null
           status: string
+          scenario_name?: string | null
           tool_id: string
           user_id: string
         }
         Update: {
           created_at?: string
+          api_key_id?: string | null
+          workspace_id?: string
           error_details?: Json | null
           id?: string
           latency_ms?: number
           payload?: Json
+          response_body?: Json | null
           status?: string
+          scenario_name?: string | null
           tool_id?: string
           user_id?: string
         }
@@ -71,8 +83,11 @@ export type Database = {
           json_schema: Json
           mock_response: Json
           name: string
+          require_api_key: boolean
+          scenarios: Json
           updated_at: string
           user_id: string
+          workspace_id: string
         }
         Insert: {
           created_at?: string
@@ -82,8 +97,11 @@ export type Database = {
           json_schema?: Json
           mock_response?: Json
           name: string
+          require_api_key?: boolean
+          scenarios?: Json
           updated_at?: string
           user_id: string
+          workspace_id: string
         }
         Update: {
           created_at?: string
@@ -93,13 +111,169 @@ export type Database = {
           json_schema?: Json
           mock_response?: Json
           name?: string
+          require_api_key?: boolean
+          scenarios?: Json
+          updated_at?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
+      api_keys: {
+        Row: {
+          created_at: string
+          id: string
+          key_hash: string
+          key_prefix: string
+          monthly_limit: number
+          name: string
+          revoked_at: string | null
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key_hash: string
+          key_prefix: string
+          monthly_limit?: number
+          name: string
+          revoked_at?: string | null
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key_hash?: string
+          key_prefix?: string
+          monthly_limit?: number
+          name?: string
+          revoked_at?: string | null
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
+      api_key_usage: {
+        Row: { api_key_id: string; calls_used: number; usage_month: string }
+        Insert: { api_key_id: string; calls_used?: number; usage_month: string }
+        Update: { api_key_id?: string; calls_used?: number; usage_month?: string }
+        Relationships: []
+      }
+      workspace_usage: {
+        Row: { calls_used: number; usage_month: string; workspace_id: string }
+        Insert: { calls_used?: number; usage_month: string; workspace_id: string }
+        Update: { calls_used?: number; usage_month?: string; workspace_id?: string }
+        Relationships: []
+      }
+      dodo_webhook_events: {
+        Row: { event_type: string; processed_at: string; webhook_id: string }
+        Insert: { event_type: string; processed_at?: string; webhook_id: string }
+        Update: { event_type?: string; processed_at?: string; webhook_id?: string }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          created_at: string
+          current_workspace_id: string | null
+          log_retention_days: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_workspace_id?: string | null
+          log_retention_days?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_workspace_id?: string | null
+          log_retention_days?: number
           updated_at?: string
           user_id?: string
         }
         Relationships: []
       }
+      workspaces: {
+        Row: {
+          created_at: string
+          created_by: string
+          current_period_end: string | null
+          id: string
+          log_retention_days: number
+          name: string
+          plan: string
+          dodo_customer_id: string | null
+          dodo_environment: string | null
+          dodo_subscription_id: string | null
+          subscription_status: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          current_period_end?: string | null
+          id?: string
+          log_retention_days?: number
+          name: string
+          plan?: string
+          dodo_customer_id?: string | null
+          dodo_environment?: string | null
+          dodo_subscription_id?: string | null
+          subscription_status?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          current_period_end?: string | null
+          id?: string
+          log_retention_days?: number
+          name?: string
+          plan?: string
+          dodo_customer_id?: string | null
+          dodo_environment?: string | null
+          dodo_subscription_id?: string | null
+          subscription_status?: string
+        }
+        Relationships: []
+      }
+      workspace_members: {
+        Row: {
+          joined_at: string
+          role: string
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          joined_at?: string
+          role: string
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          joined_at?: string
+          role?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
+      daily_usage: {
+        Row: {
+          average_latency_ms: number | null
+          day: string | null
+          schema_violations: number | null
+          successful_calls: number | null
+          total_calls: number | null
+          user_id: string | null
+          workspace_id: string | null
+        }
+        Relationships: []
+      }
       tool_stats: {
         Row: {
           last_called_at: string | null
@@ -109,12 +283,24 @@ export type Database = {
           tool_id: string | null
           total_calls: number | null
           user_id: string | null
+          workspace_id: string | null
         }
         Relationships: []
       }
     }
     Functions: {
-      [_ in never]: never
+      consume_gateway_call: {
+        Args: { target_api_key_id?: string | null; target_workspace_id: string }
+        Returns: number
+      }
+      delete_expired_logs: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      list_workspace_members: {
+        Args: { target_workspace_id: string }
+        Returns: { email: string | null; role: string; user_id: string }[]
+      }
     }
     Enums: {
       [_ in never]: never

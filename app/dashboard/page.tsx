@@ -6,6 +6,11 @@ import { CreateToolDialog } from "@/app/dashboard/components/CreateToolDialog";
 import { LogsTable } from "@/app/dashboard/components/LogsTable";
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/app/actions/auth";
+import { ApiKeysPanel } from "@/app/dashboard/components/ApiKeysPanel";
+import { AnalyticsPanel } from "@/app/dashboard/components/AnalyticsPanel";
+import { WorkspacePanel, type WorkspaceMemberOption, type WorkspaceOption } from "@/app/dashboard/components/WorkspacePanel";
+import { BillingPanel } from "@/app/dashboard/components/BillingPanel";
+import { PLAN_LIMITS, type WorkspacePlan } from "@/lib/billing";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -18,24 +23,74 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
+  const [{ data: userSettings }, { data: memberships }] = await Promise.all([
+    supabase
+      .from("user_settings")
+      .select("current_workspace_id,log_retention_days")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("workspace_members")
+      .select("workspace_id,user_id,role")
+      .eq("user_id", user.id),
+  ]);
+
+  const workspaceIds = (memberships ?? []).map((membership) => membership.workspace_id);
+  const { data: workspaceRows } = workspaceIds.length
+    ? await supabase.from("workspaces").select("id,name,log_retention_days,plan,subscription_status,current_period_end,dodo_customer_id").in("id", workspaceIds)
+    : { data: [] };
+  const activeWorkspaceId = workspaceIds.includes(userSettings?.current_workspace_id ?? "")
+    ? userSettings?.current_workspace_id ?? ""
+    : workspaceIds[0] ?? "";
+  const activeWorkspaceRole = memberships?.find(
+    (membership) => membership.workspace_id === activeWorkspaceId
+  )?.role ?? "member";
+  const activeWorkspace = workspaceRows?.find((workspace) => workspace.id === activeWorkspaceId);
+  const effectivePlan: WorkspacePlan = activeWorkspace && ["active", "past_due"].includes(activeWorkspace.subscription_status)
+    ? activeWorkspace.plan as WorkspacePlan
+    : "free";
+  const workspaceOptions: WorkspaceOption[] = (workspaceRows ?? []).map((workspace) => ({
+    ...workspace,
+    role: memberships?.find((membership) => membership.workspace_id === workspace.id)?.role ?? "member",
+  }));
   const [
     { data: tools },
     { data: logs },
     { count: totalCalls },
     { count: schemaViolations },
+    { data: apiKeys },
+    { data: dailyUsage },
+    { data: workspaceMemberRows },
   ] = await Promise.all([
-    supabase.from("tools").select("*").order("created_at", { ascending: false }),
+    supabase.from("tools").select("*").eq("workspace_id", activeWorkspaceId).order("created_at", { ascending: false }),
     supabase
       .from("logs")
       .select("*")
+      .eq("workspace_id", activeWorkspaceId)
       .order("created_at", { ascending: false })
       .limit(100),
-    supabase.from("logs").select("id", { count: "exact", head: true }),
+    supabase.from("logs").select("id", { count: "exact", head: true }).eq("workspace_id", activeWorkspaceId),
     supabase
       .from("logs")
       .select("id", { count: "exact", head: true })
+      .eq("workspace_id", activeWorkspaceId)
       .eq("status", "SCHEMA_VIOLATION"),
+    supabase
+      .from("api_keys")
+      .select("id,name,key_prefix,monthly_limit,created_at")
+      .eq("workspace_id", activeWorkspaceId)
+      .is("revoked_at", null)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("daily_usage")
+      .select("day,total_calls,successful_calls,schema_violations,average_latency_ms")
+      .eq("workspace_id", activeWorkspaceId)
+      .order("day", { ascending: false })
+      .limit(30),
+      supabase.rpc("list_workspace_members", { target_workspace_id: activeWorkspaceId }),
   ]);
+
+      const workspaceMembers: WorkspaceMemberOption[] = workspaceMemberRows ?? [];
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
@@ -59,6 +114,29 @@ export default async function DashboardPage() {
         schemaViolations={schemaViolations ?? 0}
       />
 
+      <WorkspacePanel
+        workspaces={workspaceOptions}
+        members={workspaceMembers}
+        activeWorkspaceId={activeWorkspaceId}
+        canInvite={activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin"}
+      />
+
+      <BillingPanel
+        workspaceId={activeWorkspaceId}
+        plan={effectivePlan}
+        status={activeWorkspace?.subscription_status ?? "free"}
+        periodEnd={activeWorkspace?.current_period_end ?? null}
+        hasCustomer={Boolean(activeWorkspace?.dodo_customer_id)}
+        canManage={activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin"}
+      />
+
+      <AnalyticsPanel
+        dailyUsage={dailyUsage ?? []}
+        workspaceId={activeWorkspaceId}
+        retentionDays={activeWorkspace?.log_retention_days ?? 7}
+        canManage={activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin"}
+      />
+
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">Mock Tools</h2>
@@ -68,7 +146,13 @@ export default async function DashboardPage() {
       </section>
 
       <section>
-        <LogsTable initialLogs={logs ?? []} tools={tools ?? []} userId={user.id} />
+        {(activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin") && (
+          <ApiKeysPanel apiKeys={apiKeys ?? []} maxMonthlyCalls={PLAN_LIMITS[effectivePlan].monthlyCalls} />
+        )}
+      </section>
+
+      <section>
+        <LogsTable initialLogs={logs ?? []} tools={tools ?? []} workspaceId={activeWorkspaceId} />
       </section>
     </div>
   );

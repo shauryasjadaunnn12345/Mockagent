@@ -14,16 +14,59 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { formatRelativeTime } from "@/lib/utils";
 import type { LogEntry, Tool } from "@/types/database";
+import { Button } from "@/components/ui/button";
+import { Check, Play, X } from "lucide-react";
+import { replayToolCall } from "@/app/actions/tools";
+
+type ReplayResult = { matches: boolean; error?: string };
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 
 interface LogsTableProps {
   initialLogs: LogEntry[];
   tools: Tool[];
-  userId: string;
+  workspaceId: string;
 }
 
-export function LogsTable({ initialLogs, tools, userId }: LogsTableProps) {
+export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
   const [logs, setLogs] = useState<LogEntry[]>(initialLogs);
+  const [replayingId, setReplayingId] = useState<string | null>(null);
+  const [replayResults, setReplayResults] = useState<Record<string, ReplayResult>>({});
   const toolNameById = new Map(tools.map((t) => [t.id, t.name]));
+
+  async function replay(log: LogEntry) {
+    setReplayingId(log.id);
+    setReplayResults((current) => {
+      const next = { ...current };
+      delete next[log.id];
+      return next;
+    });
+    try {
+      const replayResult = await replayToolCall(log.tool_id, log.payload);
+      if (!replayResult.success) throw new Error(replayResult.error);
+      setReplayResults((current) => ({
+        ...current,
+        [log.id]: { matches: stableJson(replayResult.response) === stableJson(log.response_body) },
+      }));
+    } catch (error) {
+      setReplayResults((current) => ({
+        ...current,
+        [log.id]: {
+          matches: false,
+          error: error instanceof Error ? error.message : "Replay failed",
+        },
+      }));
+    } finally {
+      setReplayingId(null);
+    }
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -37,7 +80,7 @@ export function LogsTable({ initialLogs, tools, userId }: LogsTableProps) {
           event: "INSERT",
           schema: "public",
           table: "logs",
-          filter: `user_id=eq.${userId}`,
+          filter: `workspace_id=eq.${workspaceId}`,
         },
         (payload) => {
           setLogs((current) => [payload.new as LogEntry, ...current].slice(0, 100));
@@ -48,7 +91,7 @@ export function LogsTable({ initialLogs, tools, userId }: LogsTableProps) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId]);
+  }, [workspaceId]);
 
   return (
     <Card>
@@ -71,7 +114,9 @@ export function LogsTable({ initialLogs, tools, userId }: LogsTableProps) {
                 <TableHead>Tool</TableHead>
                 <TableHead>Input Arguments</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Scenario</TableHead>
                 <TableHead>Latency</TableHead>
+                <TableHead>Regression</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -93,7 +138,38 @@ export function LogsTable({ initialLogs, tools, userId }: LogsTableProps) {
                       {log.status === "SUCCESS" ? "Success" : "Schema Error"}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-slate-500">
+                    {log.scenario_name ?? "Default"}
+                  </TableCell>
                   <TableCell className="text-slate-500">{log.latency_ms} ms</TableCell>
+                  <TableCell>
+                    {log.status === "SUCCESS" && log.response_body !== null ? (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={replayingId !== null}
+                          onClick={() => replay(log)}
+                          aria-label={`Replay ${toolNameById.get(log.tool_id) ?? "tool"} call`}
+                        >
+                          <Play className="h-3.5 w-3.5" />
+                          {replayingId === log.id ? "Replaying" : "Replay"}
+                        </Button>
+                        {replayResults[log.id] && (
+                          <span
+                            className={`inline-flex items-center gap-1 text-xs ${replayResults[log.id].matches ? "text-emerald-700" : "text-red-700"}`}
+                            title={replayResults[log.id].error}
+                          >
+                            {replayResults[log.id].matches ? (
+                              <><Check className="h-3.5 w-3.5" /> Match</>
+                            ) : (
+                              <><X className="h-3.5 w-3.5" /> Changed</>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    ) : "—"}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

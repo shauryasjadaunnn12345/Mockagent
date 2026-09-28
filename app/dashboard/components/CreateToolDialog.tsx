@@ -31,6 +31,21 @@ const DEFAULT_MOCK = `{
   "message": "Refund processed."
 }`;
 
+const DEFAULT_SCENARIOS = `[
+  {
+    "name": "VIP user",
+    "match": {
+      "type": "object",
+      "properties": { "user_id": { "const": "vip" } },
+      "required": ["user_id"]
+    },
+    "response": {
+      "success": true,
+      "message": "VIP refund processed."
+    }
+  }
+]`;
+
 export function CreateToolDialog() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +58,8 @@ export function CreateToolDialog() {
       description: String(formData.get("description") ?? ""),
       jsonSchema: String(formData.get("jsonSchema") ?? ""),
       mockResponse: String(formData.get("mockResponse") ?? ""),
+      scenarios: String(formData.get("scenarios") ?? "[]"),
+      requireApiKey: formData.get("requireApiKey") === "on",
     });
 
     if (!result.success) {
@@ -65,7 +82,7 @@ export function CreateToolDialog() {
           <DialogTitle>Create a Mock Tool</DialogTitle>
           <DialogDescription>
             Define the tool your agent will call, the JSON Schema its arguments must satisfy,
-            and the mock response to return on success.
+            the default response, and any conditional responses to test different cases.
           </DialogDescription>
         </DialogHeader>
 
@@ -112,6 +129,22 @@ export function CreateToolDialog() {
               required
             />
           </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="scenarios">Conditional response scenarios</Label>
+            <Textarea
+              id="scenarios"
+              name="scenarios"
+              defaultValue={DEFAULT_SCENARIOS}
+              rows={12}
+              required
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="requireApiKey" className="h-4 w-4" />
+            Require an API key to call this tool
+          </label>
 
           <DialogFooter>
             <Button type="submit" disabled={isPending}>
