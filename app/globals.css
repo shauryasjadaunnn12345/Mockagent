@@ -7,3 +7,33 @@
     --ring: 215 20% 65%;
   }
 }
+
+.landing-grid {
+  background-image:
+    linear-gradient(to right, rgb(20 60 46 / 5%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(20 60 46 / 5%) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: linear-gradient(to bottom, black, transparent 92%);
+}
+
+@keyframes landing-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.landing-enter {
+  animation: landing-enter 480ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-enter {
+    animation: none;
+  }
+}

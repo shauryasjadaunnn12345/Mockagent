@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,19 +12,25 @@ import {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; message?: string }>;
+  searchParams: Promise<{ error?: string; message?: string; mode?: string }>;
 }) {
-  const { error, message } = await searchParams;
+  const { error, message, mode } = await searchParams;
+  const signUpMode = mode === "signup";
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-10">
+      <Link href="/" className="mb-6 text-sm font-medium text-slate-500 transition hover:text-slate-900">
+        ← Back to MockAgent
+      </Link>
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-center text-xl font-bold text-slate-900">
-            MockAgent
+            {signUpMode ? "Create your MockAgent account" : "Welcome back to MockAgent"}
           </CardTitle>
           <p className="text-center text-sm text-slate-500">
-            Sign in to manage your mock tool endpoints
+            {signUpMode
+              ? "Start building and testing your agent tools"
+              : "Sign in to manage your mock tool endpoints"}
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -38,7 +45,7 @@ export default async function LoginPage({
             </p>
           )}
 
-          <form action={signInWithPassword} className="space-y-3">
+          <form action={signUpMode ? signUpWithPassword : signInWithPassword} className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input id="email" name="email" type="email" required placeholder="you@example.com" />
@@ -49,10 +56,14 @@ export default async function LoginPage({
             </div>
             <div className="flex gap-2">
               <Button type="submit" className="w-full">
-                Sign in
+                {signUpMode ? "Create account" : "Log in"}
               </Button>
-              <Button formAction={signUpWithPassword} variant="outline" className="w-full">
-                Sign up
+              <Button
+                formAction={signUpMode ? signInWithPassword : signUpWithPassword}
+                variant="outline"
+                className="w-full"
+              >
+                {signUpMode ? "Log in instead" : "Sign up"}
               </Button>
             </div>
           </form>
@@ -73,6 +84,6 @@ export default async function LoginPage({
           </form>
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }
