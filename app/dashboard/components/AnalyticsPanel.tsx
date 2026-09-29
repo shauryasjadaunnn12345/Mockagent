@@ -16,10 +16,11 @@ interface AnalyticsPanelProps {
   dailyUsage: DailyUsage[];
   workspaceId: string;
   retentionDays: number;
+  maxRetentionDays: number;
   canManage: boolean;
 }
 
-export function AnalyticsPanel({ dailyUsage, workspaceId, retentionDays, canManage }: AnalyticsPanelProps) {
+export function AnalyticsPanel({ dailyUsage, workspaceId, retentionDays, maxRetentionDays, canManage }: AnalyticsPanelProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const orderedUsage = [...dailyUsage].reverse();
@@ -41,7 +42,7 @@ export function AnalyticsPanel({ dailyUsage, workspaceId, retentionDays, canMana
           <select
             aria-label="Log retention"
             className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-800"
-            value={retentionDays}
+            value={Math.min(retentionDays, maxRetentionDays)}
             disabled={isPending || !canManage}
             onChange={(event) => {
               const days = Number(event.currentTarget.value);
@@ -52,9 +53,9 @@ export function AnalyticsPanel({ dailyUsage, workspaceId, retentionDays, canMana
               });
             }}
           >
-            <option value={7}>7 days</option>
-            <option value={30}>30 days</option>
-            <option value={90}>90 days</option>
+            {[7, 30, 90].filter((days) => days <= maxRetentionDays).map((days) => (
+              <option key={days} value={days}>{days} days</option>
+            ))}
           </select>
         </label>
       </CardHeader>

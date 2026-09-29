@@ -134,6 +134,7 @@ export default async function DashboardPage() {
         dailyUsage={dailyUsage ?? []}
         workspaceId={activeWorkspaceId}
         retentionDays={activeWorkspace?.log_retention_days ?? 7}
+        maxRetentionDays={PLAN_LIMITS[effectivePlan].retentionDays}
         canManage={activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin"}
       />
 

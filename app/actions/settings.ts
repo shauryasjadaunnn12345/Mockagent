@@ -25,6 +25,20 @@ export async function updateLogRetention(
     .maybeSingle();
   if (!membership) return { success: false, error: "Only workspace owners and admins can change retention." };
 
+  const { data: workspace, error: workspaceError } = await supabase
+    .from("workspaces")
+    .select("plan,subscription_status")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (workspaceError || !workspace) return { success: false, error: "Workspace not found." };
+
+  const plan: WorkspacePlan = ["active", "past_due"].includes(workspace.subscription_status)
+    ? workspace.plan as WorkspacePlan
+    : "free";
+  if (days > PLAN_LIMITS[plan].retentionDays) {
+    return { success: false, error: `The ${plan} plan allows up to ${PLAN_LIMITS[plan].retentionDays} days of log retention.` };
+  }
+
   const { error } = await supabase
     .from("workspaces")
     .update({ log_retention_days: days })

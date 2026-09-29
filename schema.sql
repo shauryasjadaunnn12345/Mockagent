@@ -498,7 +498,14 @@ begin
     delete from public.logs l
     using public.workspaces w
     where l.workspace_id = w.id
-      and l.created_at < now() - make_interval(days => w.log_retention_days)
+      and l.created_at < now() - make_interval(days => least(
+        w.log_retention_days,
+        case
+          when w.plan = 'team' and w.subscription_status in ('active', 'past_due') then 90
+          when w.plan = 'solo' and w.subscription_status in ('active', 'past_due') then 30
+          else 7
+        end
+      ))
     returning l.id
   )
   select count(*) into deleted_count from deleted;
