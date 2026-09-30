@@ -90,8 +90,8 @@ quick sanity check in a browser.
 
 ## 6. Scenarios, keys, and teams
 
-- Add ordered JSON Schema match scenarios to a mock tool. The first match returns its response; otherwise the default response is returned.
-- Successful logs keep response snapshots. Replay compares the current result with that saved response without adding a gateway log.
+- Add ordered JSON Schema match scenarios to a mock tool. A scenario can return one `response` or a `responses` sequence; otherwise the default response is returned. For a sequence, use a new `x-mockagent-run-id` per test run and pass it on each call. Responses advance per matching successful call and the last response repeats. Without a run ID, each call receives the first response.
+- Successful logs keep response snapshots, sequence steps, and run IDs; the dashboard lets you inspect the returned JSON. Replay compares the configured response for that saved step without adding a gateway log.
 - API keys are displayed only once and stored as SHA-256 hashes. Turn on `Key required` per tool, then send `Authorization: Bearer <key>`. Monthly limits are enforced atomically.
 - Workspaces share tools and logs. Owners/admins can invite by email, manage API keys, and set log retention up to their plan's limit (7 days for Free, 30 for Solo, 90 for Team).
 - Daily analytics show calls, schema violations, and average latency. Vercel runs the cleanup cron at 03:00 UTC; logs older than the workspace retention period are removed.

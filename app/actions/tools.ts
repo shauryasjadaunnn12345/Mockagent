@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { validateSchemaDefinition } from "@/lib/validators";
-import { parseScenarios } from "@/lib/scenarios";
-import { resolveScenario } from "@/lib/scenarios";
+import { parseScenarios, resolveScenario, resolveScenarioResponse } from "@/lib/scenarios";
 import { validateAgainstSchema } from "@/lib/validators";
 import type { Json } from "@/types/database";
 import { createHash, randomBytes } from "node:crypto";
@@ -175,7 +174,8 @@ export async function deleteTool(toolId: string): Promise<ActionResult> {
 
 export async function replayToolCall(
   toolId: string,
-  payload: Json
+  payload: Json,
+  scenarioStep: number | null
 ): Promise<{ success: true; response: Json } | { success: false; error: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -193,7 +193,12 @@ export async function replayToolCall(
   if (!validation.valid) return { success: false, error: "The original payload no longer matches the tool schema." };
 
   const scenario = resolveScenario(parseScenarios(tool.scenarios), payload);
-  return { success: true, response: (scenario?.response ?? tool.mock_response) as Json };
+  return {
+    success: true,
+    response: (scenario
+      ? resolveScenarioResponse(scenario, scenarioStep ?? 1)
+      : tool.mock_response) as Json,
+  };
 }
 
 export interface ApiKeySummary {

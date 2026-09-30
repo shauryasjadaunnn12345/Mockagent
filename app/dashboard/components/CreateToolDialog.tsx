@@ -43,6 +43,18 @@ const DEFAULT_SCENARIOS = `[
       "success": true,
       "message": "VIP refund processed."
     }
+  },
+  {
+    "name": "Stale balance then refreshed",
+    "match": {
+      "type": "object",
+      "properties": { "user_id": { "const": "retry-demo" } },
+      "required": ["user_id"]
+    },
+    "responses": [
+      { "success": true, "balance": 42, "as_of": "stale snapshot" },
+      { "success": true, "balance": 39, "as_of": "refreshed snapshot" }
+    ]
   }
 ]`;
 
@@ -139,6 +151,9 @@ export function CreateToolDialog() {
               rows={12}
               required
             />
+            <p className="text-xs text-slate-500">
+              Use a single <code>response</code>, or a <code>responses</code> array for a sequence. For sequences, use a new <code>x-mockagent-run-id</code> per test run and repeat it across calls; the last response repeats after the sequence ends.
+            </p>
           </div>
 
           <label className="flex items-center gap-2 text-sm text-slate-700">

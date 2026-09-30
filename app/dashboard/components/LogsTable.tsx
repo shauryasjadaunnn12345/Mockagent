@@ -49,7 +49,7 @@ export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
       return next;
     });
     try {
-      const replayResult = await replayToolCall(log.tool_id, log.payload);
+      const replayResult = await replayToolCall(log.tool_id, log.payload, log.scenario_step);
       if (!replayResult.success) throw new Error(replayResult.error);
       setReplayResults((current) => ({
         ...current,
@@ -113,8 +113,10 @@ export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
                 <TableHead>Timestamp</TableHead>
                 <TableHead>Tool</TableHead>
                 <TableHead>Input Arguments</TableHead>
+                <TableHead>Response</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Scenario</TableHead>
+                <TableHead>Run ID</TableHead>
                 <TableHead>Latency</TableHead>
                 <TableHead>Regression</TableHead>
               </TableRow>
@@ -133,13 +135,26 @@ export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
                       {JSON.stringify(log.payload)}
                     </code>
                   </TableCell>
+                  <TableCell className="max-w-xs">
+                    {log.response_body !== null ? (
+                      <details className="max-w-xs">
+                        <summary className="cursor-pointer text-xs text-slate-600">View JSON</summary>
+                        <pre className="mt-1 max-h-48 max-w-xs overflow-auto whitespace-pre-wrap break-all rounded bg-slate-50 p-2 text-xs text-slate-700">
+                          {JSON.stringify(log.response_body, null, 2)}
+                        </pre>
+                      </details>
+                    ) : "—"}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={log.status === "SUCCESS" ? "success" : "destructive"}>
                       {log.status === "SUCCESS" ? "Success" : "Schema Error"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-slate-500">
-                    {log.scenario_name ?? "Default"}
+                    {log.scenario_name ?? "Default"}{log.scenario_step ? ` · step ${log.scenario_step}` : ""}
+                  </TableCell>
+                  <TableCell className="max-w-32 truncate font-mono text-xs text-slate-500" title={log.run_id ?? undefined}>
+                    {log.run_id ?? "—"}
                   </TableCell>
                   <TableCell className="text-slate-500">{log.latency_ms} ms</TableCell>
                   <TableCell>

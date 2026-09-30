@@ -381,6 +381,9 @@ create table if not exists public.logs (
   api_key_id       uuid references public.api_keys (id) on delete set null,
   status           text not null check (status in ('SUCCESS', 'SCHEMA_VIOLATION')),
   scenario_name    text,
+  scenario_index   integer,
+  scenario_step    integer,
+  run_id           text,
   error_details    jsonb,                                   -- ajv errors, null on success
   latency_ms       integer not null default 0,
   created_at       timestamptz not null default now()
@@ -523,7 +526,10 @@ alter table public.tools
 alter table public.logs
   add column if not exists scenario_name text,
   add column if not exists response_body jsonb,
-  add column if not exists api_key_id uuid references public.api_keys (id) on delete set null;
+  add column if not exists api_key_id uuid references public.api_keys (id) on delete set null,
+  add column if not exists scenario_index integer,
+  add column if not exists scenario_step integer,
+  add column if not exists run_id text;
 
 comment on table public.logs is 'Execution trajectory / call log for the dynamic mock gateway.';
 
@@ -531,6 +537,9 @@ create index if not exists logs_user_id_idx on public.logs (user_id);
 create index if not exists logs_tool_id_idx on public.logs (tool_id);
 create index if not exists logs_created_at_idx on public.logs (created_at desc);
 create index if not exists logs_status_idx on public.logs (status);
+create index if not exists logs_scenario_sequence_idx
+  on public.logs (tool_id, run_id, scenario_index, status)
+  where run_id is not null;
 
 -- ---------------------------------------------------------------------
 -- Row Level Security

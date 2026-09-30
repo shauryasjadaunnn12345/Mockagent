@@ -6,7 +6,7 @@ import {
   isGatewayRateLimitConfigured,
 } from "@/lib/rate-limit";
 import { validateAgainstSchema } from "@/lib/validators";
-import { parseScenarios, resolveScenario } from "@/lib/scenarios";
+import { parseScenarios, resolveScenario, resolveScenarioResponse } from "@/lib/scenarios";
 import type { ExecutionStatus, Json } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -176,6 +176,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
+  const runId = request.headers.get("x-mockagent-run-id")?.trim() || null;
+  if (runId && (runId.length > 128 || /[\u0000-\u001f\u007f]/.test(runId))) {
+    return NextResponse.json(
+      { error: "x-mockagent-run-id must be at most 128 printable characters." },
+      { status: 400 }
+    );
+  }
+
   const supabase = createAdminClient();
 
   const { data: tool, error: toolError } = await supabase
@@ -223,13 +231,41 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     payload
   );
 
-  const scenario = valid
-    ? resolveScenario(parseScenarios(tool.scenarios), payload)
-    : null;
+  const scenarios = valid ? parseScenarios(tool.scenarios) : [];
+  const scenario = valid ? resolveScenario(scenarios, payload) : null;
+  const scenarioIndex = scenario ? scenarios.indexOf(scenario) : null;
+  let scenarioStep: number | null = null;
+
+  if (scenario?.responses) {
+    let priorCalls = 0;
+    if (runId && scenarioIndex !== null) {
+      const { count, error } = await supabase
+        .from("logs")
+        .select("id", { count: "exact", head: true })
+        .eq("tool_id", tool.id)
+        .eq("run_id", runId)
+        .eq("scenario_index", scenarioIndex)
+        .eq("status", "SUCCESS");
+
+      if (error) {
+        console.error("MockAgent: failed to load scenario sequence state", error.message);
+        return NextResponse.json(
+          { error: "Could not load scenario sequence state." },
+          { status: 503 }
+        );
+      }
+      priorCalls = count ?? 0;
+    }
+    scenarioStep = Math.min(priorCalls + 1, scenario.responses.length);
+  }
 
   const latencyMs = Math.round(performance.now() - startedAt);
   const status: ExecutionStatus = valid ? "SUCCESS" : "SCHEMA_VIOLATION";
-  const responseBody = valid ? scenario?.response ?? tool.mock_response : null;
+  const responseBody = valid
+    ? scenario
+      ? resolveScenarioResponse(scenario, scenarioStep ?? 1)
+      : tool.mock_response
+    : null;
 
   // Fire-and-forget-ish logging — we still await it so latency_ms in the log
   // reflects real gateway time, but a logging failure never blocks the
@@ -243,6 +279,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     api_key_id: apiKeyCheck.apiKeyId,
     status,
     scenario_name: scenario?.name ?? null,
+    scenario_index: scenarioIndex,
+    scenario_step: scenarioStep,
+    run_id: runId,
     error_details: valid
       ? null
       : (JSON.parse(JSON.stringify({ errors })) as Json),
@@ -272,6 +311,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     headers: {
       "x-mockagent-status": "SUCCESS",
       ...(scenario ? { "x-mockagent-scenario": scenario.name } : {}),
+      ...(scenarioStep !== null ? { "x-mockagent-scenario-step": String(scenarioStep) } : {}),
+      ...(runId ? { "x-mockagent-run-id": runId } : {}),
       "x-mockagent-latency-ms": String(latencyMs),
     },
   });

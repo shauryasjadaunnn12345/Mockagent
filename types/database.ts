@@ -26,6 +26,9 @@ export type Database = {
           response_body: Json | null
           status: string
           scenario_name: string | null
+          scenario_index: number | null
+          scenario_step: number | null
+          run_id: string | null
           tool_id: string
           user_id: string
         }
@@ -40,6 +43,9 @@ export type Database = {
           response_body?: Json | null
           status: string
           scenario_name?: string | null
+          scenario_index?: number | null
+          scenario_step?: number | null
+          run_id?: string | null
           tool_id: string
           user_id: string
         }
@@ -54,6 +60,9 @@ export type Database = {
           response_body?: Json | null
           status?: string
           scenario_name?: string | null
+          scenario_index?: number | null
+          scenario_step?: number | null
+          run_id?: string | null
           tool_id?: string
           user_id?: string
         }
