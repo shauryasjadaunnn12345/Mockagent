@@ -4,6 +4,7 @@ import { StatsCards } from "@/app/dashboard/components/StatsCards";
 import { ToolList } from "@/app/dashboard/components/ToolList";
 import { CreateToolDialog } from "@/app/dashboard/components/CreateToolDialog";
 import { LogsTable } from "@/app/dashboard/components/LogsTable";
+import { FinalAnswerChecksTable } from "@/app/dashboard/components/FinalAnswerChecksTable";
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/app/actions/auth";
 import { ApiKeysPanel } from "@/app/dashboard/components/ApiKeysPanel";
@@ -56,6 +57,7 @@ export default async function DashboardPage() {
   const [
     { data: tools },
     { data: logs },
+    { data: finalAnswerSubmissions },
     { count: totalCalls },
     { count: schemaViolations },
     { data: apiKeys },
@@ -65,6 +67,12 @@ export default async function DashboardPage() {
     supabase.from("tools").select("*").eq("workspace_id", activeWorkspaceId).order("created_at", { ascending: false }),
     supabase
       .from("logs")
+      .select("*")
+      .eq("workspace_id", activeWorkspaceId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("final_answer_submissions")
       .select("*")
       .eq("workspace_id", activeWorkspaceId)
       .order("created_at", { ascending: false })
@@ -154,6 +162,13 @@ export default async function DashboardPage() {
 
       <section>
         <LogsTable initialLogs={logs ?? []} tools={tools ?? []} workspaceId={activeWorkspaceId} />
+      </section>
+      <section>
+        <FinalAnswerChecksTable
+          initialSubmissions={finalAnswerSubmissions ?? []}
+          tools={tools ?? []}
+          workspaceId={activeWorkspaceId}
+        />
       </section>
     </div>
   );

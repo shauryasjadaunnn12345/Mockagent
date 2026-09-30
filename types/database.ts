@@ -83,10 +83,50 @@ export type Database = {
           },
         ]
       }
+      final_answer_submissions: {
+        Row: {
+          api_key_id: string | null
+          assertion_results: Json
+          created_at: string
+          final_answer: string
+          id: string
+          passed: boolean
+          run_id: string
+          tool_id: string
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          api_key_id?: string | null
+          assertion_results?: Json
+          created_at?: string
+          final_answer: string
+          id?: string
+          passed: boolean
+          run_id: string
+          tool_id: string
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          api_key_id?: string | null
+          assertion_results?: Json
+          created_at?: string
+          final_answer?: string
+          id?: string
+          passed?: boolean
+          run_id?: string
+          tool_id?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
       tools: {
         Row: {
           created_at: string
           description: string | null
+          final_answer_assertions: Json
           id: string
           is_active: boolean
           json_schema: Json
@@ -101,6 +141,7 @@ export type Database = {
         Insert: {
           created_at?: string
           description?: string | null
+          final_answer_assertions?: Json
           id?: string
           is_active?: boolean
           json_schema?: Json
@@ -115,6 +156,7 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string | null
+          final_answer_assertions?: Json
           id?: string
           is_active?: boolean
           json_schema?: Json
@@ -447,4 +489,5 @@ export type ExecutionStatus = "SUCCESS" | "SCHEMA_VIOLATION";
 export type Tool = Tables<"tools">;
 export type ToolInsert = TablesInsert<"tools">;
 export type LogEntry = Tables<"logs">;
+export type FinalAnswerSubmission = Tables<"final_answer_submissions">;
 export type ToolStats = Tables<"tool_stats">;

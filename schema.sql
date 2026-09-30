@@ -156,6 +156,7 @@ create table if not exists public.tools (
   json_schema      jsonb not null default '{}'::jsonb,   -- expected_json_schema (JSON Schema draft-07)
   mock_response    jsonb not null default '{}'::jsonb,   -- mock_response_body returned on success
   scenarios        jsonb not null default '[]'::jsonb,   -- ordered conditional mock responses
+  final_answer_assertions jsonb not null default '[]'::jsonb,
   require_api_key  boolean not null default false,
   is_active        boolean not null default true,
   created_at       timestamptz not null default now(),
@@ -389,6 +390,33 @@ create table if not exists public.logs (
   created_at       timestamptz not null default now()
 );
 
+create table if not exists public.final_answer_submissions (
+  id               uuid primary key default uuid_generate_v4(),
+  workspace_id     uuid not null references public.workspaces (id) on delete cascade,
+  tool_id          uuid not null references public.tools (id) on delete cascade,
+  user_id          uuid not null references auth.users (id) on delete cascade,
+  api_key_id       uuid references public.api_keys (id) on delete set null,
+  run_id           text not null check (char_length(run_id) between 1 and 128),
+  final_answer     text not null check (char_length(final_answer) between 1 and 30000),
+  passed           boolean not null,
+  assertion_results jsonb not null default '[]'::jsonb,
+  created_at       timestamptz not null default now()
+);
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+    and not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'final_answer_submissions'
+    ) then
+    alter publication supabase_realtime add table public.final_answer_submissions;
+  end if;
+end;
+$$;
+
 create table if not exists public.user_settings (
   user_id          uuid primary key references auth.users (id) on delete cascade,
   current_workspace_id uuid references public.workspaces (id) on delete set null,
@@ -497,7 +525,7 @@ as $$
 declare
   deleted_count integer;
 begin
-  with deleted as (
+  with deleted_logs as (
     delete from public.logs l
     using public.workspaces w
     where l.workspace_id = w.id
@@ -510,8 +538,22 @@ begin
         end
       ))
     returning l.id
+    ), deleted_answers as (
+      delete from public.final_answer_submissions s
+      using public.workspaces w
+      where s.workspace_id = w.id
+        and s.created_at < now() - make_interval(days => least(
+          w.log_retention_days,
+          case
+            when w.plan = 'team' and w.subscription_status in ('active', 'past_due') then 90
+            when w.plan = 'solo' and w.subscription_status in ('active', 'past_due') then 30
+            else 7
+          end
+        ))
+      returning s.id
   )
-  select count(*) into deleted_count from deleted;
+    select (select count(*) from deleted_logs) + (select count(*) from deleted_answers)
+    into deleted_count;
   return deleted_count;
 end;
 $$;
@@ -522,6 +564,7 @@ grant execute on function public.delete_expired_logs() to service_role;
 -- Additive upgrade for projects created before scenarios were introduced.
 alter table public.tools
   add column if not exists scenarios jsonb not null default '[]'::jsonb,
+  add column if not exists final_answer_assertions jsonb not null default '[]'::jsonb,
   add column if not exists require_api_key boolean not null default false;
 alter table public.logs
   add column if not exists scenario_name text,
@@ -540,12 +583,17 @@ create index if not exists logs_status_idx on public.logs (status);
 create index if not exists logs_scenario_sequence_idx
   on public.logs (tool_id, run_id, scenario_index, status)
   where run_id is not null;
+create index if not exists final_answer_submissions_workspace_created_idx
+  on public.final_answer_submissions (workspace_id, created_at desc);
+create index if not exists final_answer_submissions_tool_run_idx
+  on public.final_answer_submissions (tool_id, run_id, created_at desc);
 
 -- ---------------------------------------------------------------------
 -- Row Level Security
 -- ---------------------------------------------------------------------
 alter table public.tools enable row level security;
 alter table public.logs  enable row level security;
+alter table public.final_answer_submissions enable row level security;
 alter table public.api_keys enable row level security;
 alter table public.user_settings enable row level security;
 alter table public.workspaces enable row level security;
@@ -651,6 +699,13 @@ create policy "logs_select_own"
   using (public.is_workspace_member(workspace_id));
 
 drop policy if exists "logs_insert_own" on public.logs;
+
+drop policy if exists "final_answer_submissions_select_workspace" on public.final_answer_submissions;
+create policy "final_answer_submissions_select_workspace"
+  on public.final_answer_submissions for select
+  to authenticated
+  using (public.is_workspace_member(workspace_id));
+revoke insert, update, delete on public.final_answer_submissions from authenticated;
 
 revoke insert on public.tools from authenticated;
 revoke insert on public.api_keys from authenticated;

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { validateSchemaDefinition } from "@/lib/validators";
 import { parseScenarios, resolveScenario, resolveScenarioResponse } from "@/lib/scenarios";
+import { parseFinalAnswerAssertions } from "@/lib/final-answer-assertions";
 import { validateAgainstSchema } from "@/lib/validators";
 import type { Json } from "@/types/database";
 import { createHash, randomBytes } from "node:crypto";
@@ -15,6 +16,7 @@ export interface CreateToolInput {
   jsonSchema: string; // raw JSON text from the form, parsed here
   mockResponse: string; // raw JSON text from the form, parsed here
   scenarios: string;
+  finalAnswerAssertions: string;
   requireApiKey: boolean;
 }
 
@@ -57,10 +59,12 @@ export async function createTool(input: CreateToolInput): Promise<ActionResult> 
   let jsonSchema: Record<string, unknown>;
   let mockResponse: Record<string, unknown>;
   let scenarios;
+  let finalAnswerAssertions;
   try {
     jsonSchema = safeJsonParse(input.jsonSchema, "Expected JSON Schema");
     mockResponse = safeJsonParse(input.mockResponse, "Mock response body");
     scenarios = parseScenarios(JSON.parse(input.scenarios));
+    finalAnswerAssertions = parseFinalAnswerAssertions(JSON.parse(input.finalAnswerAssertions));
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Invalid JSON." };
   }
@@ -124,6 +128,7 @@ export async function createTool(input: CreateToolInput): Promise<ActionResult> 
     json_schema: jsonSchema as Json,
     mock_response: mockResponse as Json,
     scenarios: scenarios as unknown as Json,
+    final_answer_assertions: finalAnswerAssertions as unknown as Json,
     require_api_key: input.requireApiKey,
   });
 

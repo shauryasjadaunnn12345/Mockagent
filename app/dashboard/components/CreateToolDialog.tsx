@@ -58,6 +58,8 @@ const DEFAULT_SCENARIOS = `[
   }
 ]`;
 
+const DEFAULT_FINAL_ANSWER_ASSERTIONS = `[]`;
+
 export function CreateToolDialog() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +73,7 @@ export function CreateToolDialog() {
       jsonSchema: String(formData.get("jsonSchema") ?? ""),
       mockResponse: String(formData.get("mockResponse") ?? ""),
       scenarios: String(formData.get("scenarios") ?? "[]"),
+      finalAnswerAssertions: String(formData.get("finalAnswerAssertions") ?? "[]"),
       requireApiKey: formData.get("requireApiKey") === "on",
     });
 
@@ -153,6 +156,23 @@ export function CreateToolDialog() {
             />
             <p className="text-xs text-slate-500">
               Use a single <code>response</code>, or a <code>responses</code> array for a sequence. For sequences, use a new <code>x-mockagent-run-id</code> per test run and repeat it across calls; the last response repeats after the sequence ends.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="finalAnswerAssertions">Final-answer assertions</Label>
+            <Textarea
+              id="finalAnswerAssertions"
+              name="finalAnswerAssertions"
+              defaultValue={DEFAULT_FINAL_ANSWER_ASSERTIONS}
+              placeholder={`[
+  { "name": "Warn before price", "type": "before", "first": "delayed", "then": "$42.10" },
+  { "name": "Include timestamp", "type": "contains", "text": "as of" }
+]`}
+              rows={6}
+            />
+            <p className="text-xs text-slate-500">
+              Checks are case-insensitive by default. Use <code>contains</code>, <code>not_contains</code>, or <code>before</code> to check final text.
             </p>
           </div>
 
