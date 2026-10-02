@@ -10,6 +10,11 @@ import {
   evaluateFinalAnswer,
   parseFinalAnswerAssertions,
 } from "@/lib/final-answer-assertions";
+import {
+  evaluateSemanticAnswer,
+  parseSemanticCriteria,
+  type SemanticCallEvidence,
+} from "@/lib/semantic-evaluation";
 import type { Json } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +61,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const supabase = createAdminClient();
   const { data: tool, error: toolError } = await supabase
     .from("tools")
-    .select("id, user_id, workspace_id, is_active, require_api_key, final_answer_assertions")
+    .select("id, user_id, workspace_id, is_active, require_api_key, final_answer_assertions, semantic_criteria")
     .eq("id", toolId)
     .maybeSingle();
 
@@ -76,14 +81,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   if (toolRateLimitResponse) return toolRateLimitResponse;
 
   let assertions;
+  let semanticCriteria;
   try {
     assertions = parseFinalAnswerAssertions(tool.final_answer_assertions);
+    semanticCriteria = parseSemanticCriteria(tool.semantic_criteria);
   } catch (error) {
-    console.error("MockAgent: invalid final-answer assertions", error);
-    return NextResponse.json({ error: "Tool has invalid final-answer assertions." }, { status: 500 });
+    console.error("MockAgent: invalid answer QA configuration", error);
+    return NextResponse.json({ error: "Tool has invalid answer QA configuration." }, { status: 500 });
   }
-  if (assertions.length === 0) {
-    return NextResponse.json({ error: "No final-answer assertions are configured for this tool." }, { status: 409 });
+  if (assertions.length === 0 && !semanticCriteria) {
+    return NextResponse.json({ error: "No answer QA criteria are configured for this tool." }, { status: 409 });
   }
 
   const { count: matchingCalls, error: callLookupError } = await supabase
@@ -101,6 +108,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
+  let semanticEvidence: SemanticCallEvidence[] = [];
+  if (semanticCriteria) {
+    const { data: successfulCalls, error: evidenceError } = await supabase
+      .from("logs")
+      .select("created_at, response_body, scenario_name, scenario_step")
+      .eq("tool_id", tool.id)
+      .eq("run_id", runId)
+      .eq("status", "SUCCESS")
+      .order("created_at", { ascending: true })
+      .limit(50);
+    if (evidenceError) {
+      return NextResponse.json({ error: "Could not load semantic QA evidence." }, { status: 500 });
+    }
+    semanticEvidence = successfulCalls ?? [];
+  }
+
   const quotaResponse = await enforceWorkspaceQuota(
     supabase,
     tool.workspace_id,
@@ -109,7 +132,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   if (quotaResponse) return quotaResponse;
 
   const assertionResults = evaluateFinalAnswer(assertions, answer);
-  const passed = assertionResults.every((result) => result.passed);
+  const literalPassed = assertionResults.length > 0
+    ? assertionResults.every((result) => result.passed)
+    : null;
+  const passed = literalPassed ?? false;
+  const semanticEvaluation = await evaluateSemanticAnswer(
+    semanticCriteria,
+    answer,
+    semanticEvidence
+  );
   const { error: insertError } = await supabase.from("final_answer_submissions").insert({
     tool_id: tool.id,
     user_id: tool.user_id,
@@ -119,6 +150,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     final_answer: answer,
     passed,
     assertion_results: assertionResults as unknown as Json,
+    semantic_status: semanticEvaluation.status,
+    semantic_result: semanticEvaluation as unknown as Json,
   });
 
   if (insertError) {
@@ -129,6 +162,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   return NextResponse.json({
     run_id: runId,
     passed,
+    literal: {
+      status: literalPassed === null ? "not_configured" : literalPassed ? "passed" : "failed",
+      passed: literalPassed,
+      results: assertionResults,
+    },
+    semantic: semanticEvaluation,
     results: assertionResults,
   });
 }

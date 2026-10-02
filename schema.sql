@@ -157,6 +157,7 @@ create table if not exists public.tools (
   mock_response    jsonb not null default '{}'::jsonb,   -- mock_response_body returned on success
   scenarios        jsonb not null default '[]'::jsonb,   -- ordered conditional mock responses
   final_answer_assertions jsonb not null default '[]'::jsonb,
+  semantic_criteria text,
   require_api_key  boolean not null default false,
   is_active        boolean not null default true,
   created_at       timestamptz not null default now(),
@@ -385,6 +386,7 @@ create table if not exists public.logs (
   scenario_index   integer,
   scenario_step    integer,
   run_id           text,
+  failure_fingerprint text,
   error_details    jsonb,                                   -- ajv errors, null on success
   latency_ms       integer not null default 0,
   created_at       timestamptz not null default now()
@@ -400,6 +402,9 @@ create table if not exists public.final_answer_submissions (
   final_answer     text not null check (char_length(final_answer) between 1 and 30000),
   passed           boolean not null,
   assertion_results jsonb not null default '[]'::jsonb,
+  semantic_status  text not null default 'not_configured'
+    check (semantic_status in ('not_configured', 'passed', 'failed', 'error')),
+  semantic_result  jsonb,
   created_at       timestamptz not null default now()
 );
 
@@ -565,14 +570,20 @@ grant execute on function public.delete_expired_logs() to service_role;
 alter table public.tools
   add column if not exists scenarios jsonb not null default '[]'::jsonb,
   add column if not exists final_answer_assertions jsonb not null default '[]'::jsonb,
+  add column if not exists semantic_criteria text,
   add column if not exists require_api_key boolean not null default false;
+alter table public.final_answer_submissions
+  add column if not exists semantic_status text not null default 'not_configured'
+    check (semantic_status in ('not_configured', 'passed', 'failed', 'error')),
+  add column if not exists semantic_result jsonb;
 alter table public.logs
   add column if not exists scenario_name text,
   add column if not exists response_body jsonb,
   add column if not exists api_key_id uuid references public.api_keys (id) on delete set null,
   add column if not exists scenario_index integer,
   add column if not exists scenario_step integer,
-  add column if not exists run_id text;
+  add column if not exists run_id text,
+  add column if not exists failure_fingerprint text;
 
 comment on table public.logs is 'Execution trajectory / call log for the dynamic mock gateway.';
 
@@ -583,6 +594,9 @@ create index if not exists logs_status_idx on public.logs (status);
 create index if not exists logs_scenario_sequence_idx
   on public.logs (tool_id, run_id, scenario_index, status)
   where run_id is not null;
+create index if not exists logs_failure_fingerprint_idx
+  on public.logs (tool_id, run_id, failure_fingerprint)
+  where run_id is not null and failure_fingerprint is not null;
 create index if not exists final_answer_submissions_workspace_created_idx
   on public.final_answer_submissions (workspace_id, created_at desc);
 create index if not exists final_answer_submissions_tool_run_idx

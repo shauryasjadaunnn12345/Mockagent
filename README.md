@@ -32,6 +32,9 @@ NEXT_PUBLIC_APP_URL=
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 CRON_SECRET=
+SEMANTIC_JUDGE_BASE_URL=https://api.openai.com/v1
+SEMANTIC_JUDGE_API_KEY=
+SEMANTIC_JUDGE_MODEL=
 DODO_PAYMENTS_API_KEY=
 DODO_PAYMENTS_WEBHOOK_KEY=
 DODO_PAYMENTS_ENVIRONMENT=test_mode
@@ -72,8 +75,16 @@ Point your agent framework's tool-call handler at that URL. The route:
 2. Validates the request body against `json_schema` with AJV
    (`allErrors: true`, so every violation is reported at once).
 3. Writes a row to `logs` — `SUCCESS` or `SCHEMA_VIOLATION` — with latency.
-4. Returns `mock_response` (200) on success, or a 400 with detailed AJV
-   errors your agent can use to self-correct and retry.
+4. Returns `mock_response` (200) on success, or structured AJV errors (400)
+   with error codes, validation paths, and a stable failure fingerprint.
+
+Send a unique `x-mockagent-run-id` for each agent run. Within that run, the
+gateway fingerprints the tool and normalized arguments: the first schema
+failure is correctable, while an identical repeat returns 409 with
+`retryable: false`. Rate limits and temporary gateway failures include a
+transient error class and `Retry-After` guidance; back off and keep retries
+bounded. Calls without a run ID still receive structured schema errors but
+cannot be checked against earlier calls in that run.
 
 `GET` on the same URL returns the tool's schema and description, handy for a
 quick sanity check in a browser.
@@ -93,6 +104,7 @@ quick sanity check in a browser.
 - Add ordered JSON Schema match scenarios to a mock tool. A scenario can return one `response` or a `responses` sequence; otherwise the default response is returned. For a sequence, use a new `x-mockagent-run-id` per test run and pass it on each call. Responses advance per matching successful call and the last response repeats. Without a run ID, each call receives the first response.
 - Successful logs keep response snapshots, sequence steps, and run IDs; the dashboard lets you inspect the returned JSON. Replay compares the configured response for that saved step without adding a gateway log.
 - Configure final-answer assertions on a tool with `contains`, `not_contains`, or `before` rules. Submit the agent's final text to `POST {NEXT_PUBLIC_APP_URL}/api/v1/mock/{toolId}/final-answer` with `x-mockagent-run-id` matching its tool calls and JSON body `{ "final_answer": "..." }`. The route returns each rule's result and stores the submitted answer for dashboard review. Checks are literal text matches, case-insensitive unless configured otherwise; they do not assess whether wording is semantically correct.
+- Configure optional Semantic QA criteria on a tool to judge whether the final answer is supported by successful, timestamped tool responses for that run. The judge uses `SEMANTIC_JUDGE_BASE_URL` (defaults to OpenAI-compatible `/v1`), `SEMANTIC_JUDGE_API_KEY`, and `SEMANTIC_JUDGE_MODEL`; judge credentials stay server-side. The final-answer endpoint returns distinct `literal` and `semantic` results. Literal status is `passed`, `failed`, or `not_configured`; semantic status is `passed`, `failed`, `error`, or `not_configured`. Its legacy top-level `passed` field still represents literal assertions only. Semantic QA sends the final answer and successful response bodies/timestamps to the configured judge; treat it as model-based evidence, not a guarantee of correctness.
 - API keys are displayed only once and stored as SHA-256 hashes. Turn on `Key required` per tool, then send `Authorization: Bearer <key>`. Monthly limits are enforced atomically.
 - Workspaces share tools and logs. Owners/admins can invite by email, manage API keys, and set log retention up to their plan's limit (7 days for Free, 30 for Solo, 90 for Team).
 - Daily analytics show calls, schema violations, and average latency. Vercel runs the cleanup cron at 03:00 UTC; logs older than the workspace retention period are removed.

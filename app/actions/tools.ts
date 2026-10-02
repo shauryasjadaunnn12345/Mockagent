@@ -5,6 +5,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { validateSchemaDefinition } from "@/lib/validators";
 import { parseScenarios, resolveScenario, resolveScenarioResponse } from "@/lib/scenarios";
 import { parseFinalAnswerAssertions } from "@/lib/final-answer-assertions";
+import { parseSemanticCriteria } from "@/lib/semantic-evaluation";
 import { validateAgainstSchema } from "@/lib/validators";
 import type { Json } from "@/types/database";
 import { createHash, randomBytes } from "node:crypto";
@@ -17,6 +18,7 @@ export interface CreateToolInput {
   mockResponse: string; // raw JSON text from the form, parsed here
   scenarios: string;
   finalAnswerAssertions: string;
+  semanticCriteria: string;
   requireApiKey: boolean;
 }
 
@@ -60,11 +62,13 @@ export async function createTool(input: CreateToolInput): Promise<ActionResult> 
   let mockResponse: Record<string, unknown>;
   let scenarios;
   let finalAnswerAssertions;
+  let semanticCriteria;
   try {
     jsonSchema = safeJsonParse(input.jsonSchema, "Expected JSON Schema");
     mockResponse = safeJsonParse(input.mockResponse, "Mock response body");
     scenarios = parseScenarios(JSON.parse(input.scenarios));
     finalAnswerAssertions = parseFinalAnswerAssertions(JSON.parse(input.finalAnswerAssertions));
+    semanticCriteria = parseSemanticCriteria(input.semanticCriteria);
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Invalid JSON." };
   }
@@ -129,6 +133,7 @@ export async function createTool(input: CreateToolInput): Promise<ActionResult> 
     mock_response: mockResponse as Json,
     scenarios: scenarios as unknown as Json,
     final_answer_assertions: finalAnswerAssertions as unknown as Json,
+    semantic_criteria: semanticCriteria,
     require_api_key: input.requireApiKey,
   });
 

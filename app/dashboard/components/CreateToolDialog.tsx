@@ -74,6 +74,7 @@ export function CreateToolDialog() {
       mockResponse: String(formData.get("mockResponse") ?? ""),
       scenarios: String(formData.get("scenarios") ?? "[]"),
       finalAnswerAssertions: String(formData.get("finalAnswerAssertions") ?? "[]"),
+      semanticCriteria: String(formData.get("semanticCriteria") ?? ""),
       requireApiKey: formData.get("requireApiKey") === "on",
     });
 
@@ -166,13 +167,27 @@ export function CreateToolDialog() {
               name="finalAnswerAssertions"
               defaultValue={DEFAULT_FINAL_ANSWER_ASSERTIONS}
               placeholder={`[
-  { "name": "Warn before price", "type": "before", "first": "delayed", "then": "$42.10" },
-  { "name": "Include timestamp", "type": "contains", "text": "as of" }
+  { "name": "Lead with stale status", "type": "before", "first": "Stale price", "then": "$42.10" },
+  { "name": "Include source timestamp", "type": "contains", "text": "Jan 15, 2024" }
 ]`}
               rows={6}
             />
             <p className="text-xs text-slate-500">
               Checks are case-insensitive by default. Use <code>contains</code>, <code>not_contains</code>, or <code>before</code> to check final text.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="semanticCriteria">Semantic QA criteria</Label>
+            <Textarea
+              id="semanticCriteria"
+              name="semanticCriteria"
+              rows={4}
+              maxLength={2000}
+              placeholder="Use the newest timestamped balance; do not report stale values as current."
+            />
+            <p className="text-xs text-slate-500">
+              An LLM judge compares the final answer with successful tool responses and their timestamps. Configure the server-side judge to enable this check; answer text and tool responses are sent to that provider.
             </p>
           </div>
 

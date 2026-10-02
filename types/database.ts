@@ -20,6 +20,7 @@ export type Database = {
           api_key_id: string | null
           workspace_id: string
           error_details: Json | null
+          failure_fingerprint: string | null
           id: string
           latency_ms: number
           payload: Json
@@ -37,6 +38,7 @@ export type Database = {
           api_key_id?: string | null
           workspace_id: string
           error_details?: Json | null
+          failure_fingerprint?: string | null
           id?: string
           latency_ms?: number
           payload?: Json
@@ -54,6 +56,7 @@ export type Database = {
           api_key_id?: string | null
           workspace_id?: string
           error_details?: Json | null
+          failure_fingerprint?: string | null
           id?: string
           latency_ms?: number
           payload?: Json
@@ -92,6 +95,8 @@ export type Database = {
           id: string
           passed: boolean
           run_id: string
+          semantic_result: Json | null
+          semantic_status: string
           tool_id: string
           user_id: string
           workspace_id: string
@@ -104,6 +109,8 @@ export type Database = {
           id?: string
           passed: boolean
           run_id: string
+          semantic_result?: Json | null
+          semantic_status?: string
           tool_id: string
           user_id: string
           workspace_id: string
@@ -116,6 +123,8 @@ export type Database = {
           id?: string
           passed?: boolean
           run_id?: string
+          semantic_result?: Json | null
+          semantic_status?: string
           tool_id?: string
           user_id?: string
           workspace_id?: string
@@ -134,6 +143,7 @@ export type Database = {
           name: string
           require_api_key: boolean
           scenarios: Json
+          semantic_criteria: string | null
           updated_at: string
           user_id: string
           workspace_id: string
@@ -149,6 +159,7 @@ export type Database = {
           name: string
           require_api_key?: boolean
           scenarios?: Json
+          semantic_criteria?: string | null
           updated_at?: string
           user_id: string
           workspace_id: string
@@ -164,6 +175,7 @@ export type Database = {
           name?: string
           require_api_key?: boolean
           scenarios?: Json
+          semantic_criteria?: string | null
           updated_at?: string
           user_id?: string
           workspace_id?: string

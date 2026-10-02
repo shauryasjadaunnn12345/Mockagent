@@ -24,7 +24,15 @@ export async function enforceApiKey(
   if (!token) {
     return {
       apiKeyId: null,
-      response: NextResponse.json({ error: "A valid bearer API key is required." }, { status: 401 }),
+      response: NextResponse.json(
+        {
+          error_code: "API_KEY_REQUIRED",
+          error_class: "PERMANENT",
+          error: "A valid bearer API key is required.",
+          retryable: false,
+        },
+        { status: 401 }
+      ),
     };
   }
 
@@ -42,7 +50,15 @@ export async function enforceApiKey(
   if (!apiKey || apiKey.revoked_at || !validHash) {
     return {
       apiKeyId: null,
-      response: NextResponse.json({ error: "A valid bearer API key is required." }, { status: 401 }),
+      response: NextResponse.json(
+        {
+          error_code: "INVALID_API_KEY",
+          error_class: "PERMANENT",
+          error: "A valid bearer API key is required.",
+          retryable: false,
+        },
+        { status: 401 }
+      ),
     };
   }
 
@@ -60,7 +76,15 @@ export async function enforceWorkspaceQuota(
   });
   if (error || usage === null) {
     console.error("MockAgent: workspace usage check failed", error?.message);
-    return NextResponse.json({ error: "Workspace usage could not be checked." }, { status: 503 });
+    return NextResponse.json(
+      {
+        error_code: "WORKSPACE_USAGE_UNAVAILABLE",
+        error_class: "TRANSIENT",
+        error: "Workspace usage could not be checked.",
+        retryable: true,
+      },
+      { status: 503 }
+    );
   }
   if (usage < 0) {
     const now = new Date();
@@ -68,7 +92,13 @@ export async function enforceWorkspaceQuota(
     const nextMonth = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
     const retryAfter = Math.max(1, Math.ceil((nextMonth.getTime() - Date.now()) / 1000));
     return NextResponse.json(
-      { error: "Monthly workspace or API key call limit reached." },
+      {
+        error_code: "MONTHLY_QUOTA_EXCEEDED",
+        error_class: "TRANSIENT",
+        error: "Monthly workspace or API key call limit reached.",
+        retryable: true,
+        retry_after_seconds: retryAfter,
+      },
       { status: 429, headers: { "Retry-After": String(retryAfter) } }
     );
   }
@@ -107,7 +137,13 @@ export async function enforceToolRateLimit(toolId: string): Promise<NextResponse
 
 function rateLimitUnavailable() {
   return NextResponse.json(
-    { error: "Gateway rate limiting is unavailable." },
+    {
+      error_code: "RATE_LIMITER_UNAVAILABLE",
+      error_class: "TRANSIENT",
+      error: "Gateway rate limiting is unavailable.",
+      retryable: true,
+      retry_after_seconds: 30,
+    },
     { status: 503, headers: { "Retry-After": "30" } }
   );
 }
@@ -115,7 +151,13 @@ function rateLimitUnavailable() {
 function rateLimitExceeded(result: Awaited<ReturnType<typeof checkGatewayRateLimit>>) {
   const retryAfter = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
   return NextResponse.json(
-    { error: "Rate limit exceeded. Retry later.", retry_after_seconds: retryAfter },
+    {
+      error_code: "RATE_LIMIT_EXCEEDED",
+      error_class: "TRANSIENT",
+      error: "Rate limit exceeded. Retry later.",
+      retryable: true,
+      retry_after_seconds: retryAfter,
+    },
     {
       status: 429,
       headers: {

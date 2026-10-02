@@ -73,9 +73,10 @@ export function FinalAnswerChecksTable({
                 <TableHead>Timestamp</TableHead>
                 <TableHead>Tool</TableHead>
                 <TableHead>Run ID</TableHead>
-                <TableHead>Result</TableHead>
+                <TableHead>Literal checks</TableHead>
                 <TableHead>Final Answer</TableHead>
                 <TableHead>Assertions</TableHead>
+                <TableHead>Semantic QA</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -96,8 +97,14 @@ export function FinalAnswerChecksTable({
                       {submission.run_id}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={submission.passed ? "success" : "destructive"}>
-                        {submission.passed ? "Passed" : "Failed"}
+                      <Badge
+                        variant={results.length === 0 ? "outline" : submission.passed ? "success" : "destructive"}
+                      >
+                        {results.length === 0
+                          ? "Not configured"
+                          : submission.passed
+                            ? "Passed"
+                            : "Failed"}
                       </Badge>
                     </TableCell>
                     <TableCell className="max-w-xs">
@@ -121,6 +128,32 @@ export function FinalAnswerChecksTable({
                           </li>
                         ))}
                       </ul>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          submission.semantic_status === "passed"
+                            ? "success"
+                            : submission.semantic_status === "failed" || submission.semantic_status === "error"
+                              ? "destructive"
+                              : "outline"
+                        }
+                        title={
+                          typeof submission.semantic_result === "object" &&
+                          submission.semantic_result !== null &&
+                          "rationale" in submission.semantic_result
+                            ? String(submission.semantic_result.rationale)
+                            : undefined
+                        }
+                      >
+                        {submission.semantic_status === "not_configured"
+                          ? "Not configured"
+                          : submission.semantic_status === "error"
+                            ? "Error"
+                            : submission.semantic_status === "passed"
+                              ? "Passed"
+                              : "Failed"}
+                      </Badge>
                     </TableCell>
                   </TableRow>
                 );
