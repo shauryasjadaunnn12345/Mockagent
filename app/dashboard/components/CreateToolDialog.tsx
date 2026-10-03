@@ -161,19 +161,20 @@ export function CreateToolDialog() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="finalAnswerAssertions">Final-answer assertions</Label>
+            <Label htmlFor="finalAnswerAssertions">Run &amp; final-answer assertions</Label>
             <Textarea
               id="finalAnswerAssertions"
               name="finalAnswerAssertions"
               defaultValue={DEFAULT_FINAL_ANSWER_ASSERTIONS}
               placeholder={`[
+  { "name": "Refund flow", "type": "tool_sequence", "tools": ["lookup_order", "check_refund_eligibility", "issue_refund"] },
   { "name": "Lead with stale status", "type": "before", "first": "Stale price", "then": "$42.10" },
   { "name": "Include source timestamp", "type": "contains", "text": "Jan 15, 2024" }
 ]`}
-              rows={6}
+              rows={8}
             />
             <p className="text-xs text-slate-500">
-              Checks are case-insensitive by default. Use <code>contains</code>, <code>not_contains</code>, or <code>before</code> to check final text.
+              <code>tool_sequence</code> checks the exact tool names and order for the run ID, including unexpected or missing calls. Use <code>contains</code>, <code>not_contains</code>, or <code>before</code> to check final text.
             </p>
           </div>
 

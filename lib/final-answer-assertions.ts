@@ -17,6 +17,11 @@ export type FinalAnswerAssertion =
       first: string;
       then: string;
       case_sensitive?: boolean;
+    }
+  | {
+      name: string;
+      type: "tool_sequence";
+      tools: string[];
     };
 
 export interface FinalAnswerAssertionResult {
@@ -28,7 +33,7 @@ export interface FinalAnswerAssertionResult {
 
 export function parseFinalAnswerAssertions(value: unknown): FinalAnswerAssertion[] {
   if (!Array.isArray(value)) {
-    throw new Error("Final-answer assertions must be a JSON array.");
+    throw new Error("Run and final-answer assertions must be a JSON array.");
   }
   if (value.length > 30) {
     throw new Error("A tool can have at most 30 final-answer assertions.");
@@ -76,15 +81,55 @@ export function parseFinalAnswerAssertions(value: unknown): FinalAnswerAssertion
       };
     }
 
+    if (candidate.type === "tool_sequence") {
+      const tools = candidate.tools;
+      if (
+        !Array.isArray(tools) ||
+        tools.length === 0 ||
+        tools.length > 50 ||
+        !tools.every(isNonEmptyText)
+      ) {
+        throw new Error(
+          `Assertion ${index + 1} needs a tools array with 1 to 50 non-empty tool names.`
+        );
+      }
+      return {
+        name,
+        type: "tool_sequence",
+        tools: tools.map((tool) => tool.trim()),
+      };
+    }
+
     throw new Error(`Assertion ${index + 1} has an unsupported type.`);
   });
 }
 
 export function evaluateFinalAnswer(
   assertions: FinalAnswerAssertion[],
-  answer: string
+  answer: string,
+  toolCalls: string[] = []
 ): FinalAnswerAssertionResult[] {
   return assertions.map((assertion) => {
+    if (assertion.type === "tool_sequence") {
+      const passed =
+        assertion.tools.length === toolCalls.length &&
+        assertion.tools.every((tool, index) => tool === toolCalls[index]);
+      const mismatchIndex = assertion.tools.findIndex(
+        (tool, index) => tool !== toolCalls[index]
+      );
+      const firstUnexpectedCall =
+        mismatchIndex === -1 && toolCalls.length > assertion.tools.length;
+      const differenceIndex = firstUnexpectedCall ? assertion.tools.length : mismatchIndex;
+      return {
+        name: assertion.name,
+        type: assertion.type,
+        passed,
+        detail: passed
+          ? "The expected tools were called in the expected order."
+          : `Expected ${assertion.tools.length} calls, received ${toolCalls.length}. At step ${differenceIndex + 1}, expected ${JSON.stringify(assertion.tools[differenceIndex] ?? "(no call)")}, received ${JSON.stringify(toolCalls[differenceIndex] ?? "(no call)")}.`,
+      };
+    }
+
     const normalize = (value: string) =>
       assertion.case_sensitive ? value : value.toLocaleLowerCase();
     const normalizedAnswer = normalize(answer);

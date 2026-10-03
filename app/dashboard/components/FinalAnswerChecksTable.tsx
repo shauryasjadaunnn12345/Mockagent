@@ -58,7 +58,7 @@ export function FinalAnswerChecksTable({
     <Card>
       <CardHeader>
         <CardTitle className="text-base font-semibold text-slate-900">
-          Final Answer Checks
+          Run &amp; Final-Answer Checks
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -73,7 +73,7 @@ export function FinalAnswerChecksTable({
                 <TableHead>Timestamp</TableHead>
                 <TableHead>Tool</TableHead>
                 <TableHead>Run ID</TableHead>
-                <TableHead>Literal checks</TableHead>
+                <TableHead>Run/text checks</TableHead>
                 <TableHead>Final Answer</TableHead>
                 <TableHead>Assertions</TableHead>
                 <TableHead>Semantic QA</TableHead>

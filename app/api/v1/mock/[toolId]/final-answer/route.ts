@@ -108,6 +108,46 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
+  let toolCalls: string[] = [];
+  if (assertions.some((assertion) => assertion.type === "tool_sequence")) {
+    const { data: runLogs, count: runCallCount, error: runLogsError } = await supabase
+      .from("logs")
+      .select("id,tool_id,created_at", { count: "exact" })
+      .eq("workspace_id", tool.workspace_id)
+      .eq("run_id", runId)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(501);
+    if (runLogsError) {
+      return NextResponse.json({ error: "Could not load the tool-call sequence for this run." }, { status: 500 });
+    }
+    if ((runCallCount ?? 0) > 500) {
+      return NextResponse.json(
+        { error: "Tool-sequence checks support runs with at most 500 tool calls." },
+        { status: 413 }
+      );
+    }
+
+    const toolIds = [...new Set((runLogs ?? []).map((log) => log.tool_id))];
+    const { data: runTools, error: runToolsError } = toolIds.length
+      ? await supabase.from("tools").select("id,name").in("id", toolIds)
+      : { data: [], error: null };
+    if (runToolsError) {
+      return NextResponse.json({ error: "Could not load tool names for this run." }, { status: 500 });
+    }
+    const toolNameById = new Map((runTools ?? []).map((runTool) => [runTool.id, runTool.name]));
+    const resolvedToolCalls: string[] = [];
+    for (const log of runLogs ?? []) {
+      const toolName = toolNameById.get(log.tool_id);
+      if (toolName === undefined) {
+        console.error("MockAgent: run log references an unavailable tool", log.tool_id);
+        return NextResponse.json({ error: "A tool in this run could not be resolved." }, { status: 500 });
+      }
+      resolvedToolCalls.push(toolName);
+    }
+    toolCalls = resolvedToolCalls;
+  }
+
   let semanticEvidence: SemanticCallEvidence[] = [];
   if (semanticCriteria) {
     const { data: successfulCalls, error: evidenceError } = await supabase
@@ -131,7 +171,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   );
   if (quotaResponse) return quotaResponse;
 
-  const assertionResults = evaluateFinalAnswer(assertions, answer);
+  const assertionResults = evaluateFinalAnswer(assertions, answer, toolCalls);
   const literalPassed = assertionResults.length > 0
     ? assertionResults.every((result) => result.passed)
     : null;

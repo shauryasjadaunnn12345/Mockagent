@@ -597,6 +597,9 @@ create index if not exists logs_scenario_sequence_idx
 create index if not exists logs_failure_fingerprint_idx
   on public.logs (tool_id, run_id, failure_fingerprint)
   where run_id is not null and failure_fingerprint is not null;
+create index if not exists logs_workspace_run_created_idx
+  on public.logs (workspace_id, run_id, created_at, id)
+  where run_id is not null;
 create index if not exists final_answer_submissions_workspace_created_idx
   on public.final_answer_submissions (workspace_id, created_at desc);
 create index if not exists final_answer_submissions_tool_run_idx
