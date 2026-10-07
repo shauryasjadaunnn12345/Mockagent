@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { StatsCards } from "@/app/dashboard/components/StatsCards";
@@ -12,6 +13,17 @@ import { AnalyticsPanel } from "@/app/dashboard/components/AnalyticsPanel";
 import { WorkspacePanel, type WorkspaceMemberOption, type WorkspaceOption } from "@/app/dashboard/components/WorkspacePanel";
 import { BillingPanel } from "@/app/dashboard/components/BillingPanel";
 import { PLAN_LIMITS, type WorkspacePlan } from "@/lib/billing";
+
+export const metadata: Metadata = {
+  title: "Workspace dashboard",
+  alternates: {
+    canonical: "/dashboard",
+  },
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 export default async function DashboardPage() {
   const supabase = await createClient();

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +9,17 @@ import {
   signUpWithPassword,
   signInWithGitHub,
 } from "@/app/actions/auth";
+
+export const metadata: Metadata = {
+  title: "Sign in or create an account",
+  alternates: {
+    canonical: "/login",
+  },
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 export default async function LoginPage({
   searchParams,

@@ -53,6 +53,17 @@ const steps = [
   { number: "3", title: "Inspect and iterate", text: "Review calls, validation failures, latency, and replay comparisons in one workspace." },
 ];
 
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "MockAgent",
+  url: "https://mockagent.online/",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Web",
+  description:
+    "Mock AI agent tools, validate tool-call JSON with JSON Schema, test edge cases, and inspect execution logs before connecting real services.",
+};
+
 export default async function HomePage() {
   const supabase = await createClient();
   const {
@@ -63,6 +74,12 @@ export default async function HomePage() {
 
   return (
     <main className="landing-shell min-h-screen overflow-hidden bg-[#f3f7f3] text-[#142c25]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+        }}
+      />
       <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
         <Link href="/" className="flex items-center gap-3" aria-label="MockAgent home">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#143d31] text-[#dfff8b]">

@@ -94,7 +94,7 @@ quick sanity check in a browser.
 1. Push this repo to GitHub.
 2. Import it in Vercel, add the same env vars from `.env.local`.
 3. Set `NEXT_PUBLIC_APP_URL` to your production domain (e.g.
-   `https://mockagent.yourdomain.com`) — it's used to build the gateway URLs
+   `https://mockagent.online`) — it's used to build the gateway URLs
    shown in the dashboard.
 4. Deploy.
 5. Set `CRON_SECRET` in Vercel. Vercel sends it to the scheduled cleanup route as a bearer token.
