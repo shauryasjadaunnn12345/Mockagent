@@ -58,6 +58,7 @@ const structuredData = {
   "@type": "SoftwareApplication",
   name: "MockAgent",
   url: "https://mockagent.online/",
+  sameAs: ["https://www.linkedin.com/company/145242834/"],
   applicationCategory: "DeveloperApplication",
   operatingSystem: "Web",
   description:
@@ -298,6 +299,14 @@ export default async function HomePage() {
         <Link href="/" className="font-semibold text-[#28473a]">MockAgent</Link>
         <p>Mock endpoints for the tools your agents call.</p>
         <div className="flex gap-4">
+          <a
+            href="https://www.linkedin.com/company/145242834/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-[#28473a]"
+          >
+            LinkedIn
+          </a>
           <Link href="/login?mode=login" className="hover:text-[#28473a]">Log in</Link>
           <Link href="/login?mode=signup" className="hover:text-[#28473a]">Sign up</Link>
         </div>
