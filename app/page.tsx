@@ -8,6 +8,7 @@ import {
   Check,
   CircleDot,
   Clock3,
+  Code2,
   KeyRound,
   Play,
   ShieldCheck,
@@ -88,7 +89,13 @@ export default async function HomePage() {
           </span>
           <span className="text-lg font-semibold tracking-normal">MockAgent</span>
         </Link>
-        <nav className="flex items-center gap-2 sm:gap-3" aria-label="Account">
+        <nav className="flex items-center gap-1 sm:gap-3" aria-label="Main navigation">
+          <a
+            href="#sdk"
+            className="rounded-lg px-3 py-2 text-sm font-medium text-[#43584f] transition hover:bg-white/70 hover:text-[#142c25] sm:px-4"
+          >
+            SDK
+          </a>
           <Link
             href="/login?mode=login"
             className="rounded-lg px-3 py-2 text-sm font-medium text-[#43584f] transition hover:bg-white/70 hover:text-[#142c25] sm:px-4"
@@ -273,6 +280,41 @@ export default async function HomePage() {
                 </div>
               </article>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="sdk" className="border-y border-[#dce5dc] bg-white px-5 py-16 sm:px-8 lg:px-12 lg:py-20">
+        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+          <div>
+            <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase text-[#4a8064]">
+              <Code2 className="h-4 w-4" aria-hidden="true" />
+              Integrate with the SDK
+            </p>
+            <h2 className="mt-3 max-w-xl font-serif text-3xl font-medium leading-tight text-[#17362a] sm:text-4xl">
+              Call your mocks from your code.
+            </h2>
+            <p className="mt-4 max-w-xl text-sm leading-6 text-[#65776c]">
+              Install the published <code className="rounded bg-[#eef4ed] px-1.5 py-0.5 font-mono text-[#28473a]">trymockagent</code> npm package and call your mock endpoints directly from JavaScript or TypeScript. Pass run IDs, add bearer keys for protected tools, and inspect structured errors when a call needs fixing.
+            </p>
+            <a
+              href="https://www.npmjs.com/package/trymockagent"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[#143d31] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#20533f]"
+            >
+              View trymockagent on npm <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+            </a>
+            <p className="mt-4 text-xs leading-5 text-[#718278]">
+              Python client source is available in the project but has not been published to PyPI yet. Any language can call the HTTP endpoint directly.
+            </p>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-[#d5e0d5] bg-[#172b25] shadow-[0_18px_50px_-35px_rgba(20,44,37,0.5)]">
+            <div className="flex items-center justify-between border-b border-[#334b40] px-4 py-3">
+              <span className="font-mono text-xs text-[#b2c8b8]">JavaScript / TypeScript</span>
+              <span className="rounded-md border border-[#496459] px-2 py-1 font-mono text-[10px] text-[#d9ef83]">trymockagent</span>
+            </div>
+            <pre className="overflow-x-auto p-5 font-mono text-xs leading-6 text-[#dbe7d9]"><code><span className="text-[#90ab9b]"># Install</span>{"\n"}npm install trymockagent{"\n\n"}<span className="text-[#90ab9b]"># Use the tool in your app</span>{"\n"}{`import { MockAgent } from "trymockagent";\n\nconst mock = new MockAgent({\n  toolId: "YOUR_TOOL_ID",\n});\n\nconst result = await mock.call(\n  { user_id: "vip", reason: "duplicate" },\n  { runId: "test-run-1" },\n);`}</code></pre>
           </div>
         </div>
       </section>

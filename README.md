@@ -89,7 +89,50 @@ cannot be checked against earlier calls in that run.
 `GET` on the same URL returns the tool's schema and description, handy for a
 quick sanity check in a browser.
 
-## 5. Deploying to Vercel
+## 5. Client SDKs
+
+The JavaScript/TypeScript client is published on npm as `trymockagent`. It calls
+tools with JSON, associates calls with a run ID, retrieves a tool's schema, and
+submits configured final-answer QA:
+
+```bash
+npm install trymockagent
+```
+
+```js
+import { MockAgent } from "trymockagent";
+
+const mock = new MockAgent({ toolId: "YOUR_TOOL_ID" });
+const result = await mock.call({ user_id: "vip", reason: "duplicate" }, {
+  runId: "unique-run-id",
+});
+```
+
+Install the unpublished Python client from the source directory:
+
+```bash
+cd packages/mockagent-python
+python -m pip install .
+```
+
+```python
+from trymockagent import MockAgent
+
+mock = MockAgent(tool_id="YOUR_TOOL_ID")
+result = mock.call({"user_id": "vip", "reason": "duplicate"}, run_id="unique-run-id")
+```
+
+The Python client source is included in the repository but has not been
+published to PyPI yet. Use the HTTP endpoint directly if you don't want to
+install from source.
+
+Pass `apiKey` (JavaScript) or `api_key` (Python) when a tool requires bearer-key
+protection. Both SDKs expose error status, response body, retryability, and
+`Retry-After` guidance without retrying automatically. The package source and
+full examples are in [`packages/mockagent-js`](./packages/mockagent-js) and
+[`packages/mockagent-python`](./packages/mockagent-python).
+
+## 6. Deploying to Vercel
 
 1. Push this repo to GitHub.
 2. Import it in Vercel, add the same env vars from `.env.local`.
@@ -99,7 +142,7 @@ quick sanity check in a browser.
 4. Deploy.
 5. Set `CRON_SECRET` in Vercel. Vercel sends it to the scheduled cleanup route as a bearer token.
 
-## 6. Scenarios, keys, and teams
+## 7. Scenarios, keys, and teams
 
 - Add ordered JSON Schema match scenarios to a mock tool. A scenario can return one `response` or a `responses` sequence; otherwise the default response is returned. For a sequence, use a new `x-mockagent-run-id` per test run and pass it on each call. Responses advance per matching successful call and the last response repeats. Without a run ID, each call receives the first response.
 - Successful logs keep response snapshots, sequence steps, and run IDs; the dashboard lets you inspect the returned JSON. Replay compares the configured response for that saved step without adding a gateway log.

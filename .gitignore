@@ -5,3 +5,7 @@ out/
 .env.*
 !.env.example
 supabase/.temp/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/

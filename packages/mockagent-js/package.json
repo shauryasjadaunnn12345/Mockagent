@@ -1,0 +1,23 @@
+{
+  "name": "trymockagent",
+  "version": "0.1.0",
+  "description": "JavaScript and TypeScript client for the MockAgent API",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs"
+    }
+  },
+  "files": [
+    "index.mjs",
+    "index.d.ts",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
