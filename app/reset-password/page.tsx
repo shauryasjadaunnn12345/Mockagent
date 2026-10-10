@@ -21,36 +21,23 @@ export const metadata: Metadata = {
 export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; code?: string; token_hash?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const { error, code, token_hash } = await searchParams;
-  const recoveryCode = code ?? token_hash;
-  let resetLinkMessage = "";
+  const { error } = await searchParams;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (recoveryCode) {
-    try {
-      const supabase = await createClient();
-      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(recoveryCode);
-
-      if (exchangeError) {
-        resetLinkMessage = exchangeError.message;
-      }
-    } catch {
-      resetLinkMessage = "Something went wrong while validating your reset link.";
-    }
-  }
-
-  if (resetLinkMessage) {
+  if (!user) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-10">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle className="text-center text-xl font-bold text-slate-900">
-              {resetLinkMessage === "Something went wrong while validating your reset link." ? "Unable to continue" : "Reset link expired"}
-            </CardTitle>
+            <CardTitle className="text-center text-xl font-bold text-slate-900">Reset link expired</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm text-red-600">{resetLinkMessage}</p>
+            <p className="text-sm text-red-600">
+              {error ?? "Your password reset session is missing or has expired. Please request a new reset link."}
+            </p>
             <Link href="/forgot-password" className="inline-flex text-sm font-medium text-[#286449] hover:text-[#17362a]">
               Request a new reset link
             </Link>
