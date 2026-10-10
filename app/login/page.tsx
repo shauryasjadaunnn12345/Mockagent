@@ -66,6 +66,13 @@ export default async function LoginPage({
               <Label htmlFor="password">Password</Label>
               <Input id="password" name="password" type="password" required />
             </div>
+            {!signUpMode && (
+              <div className="flex justify-end">
+                <Link href="/forgot-password" className="text-sm font-medium text-[#286449] hover:text-[#17362a]">
+                  Forgot password?
+                </Link>
+              </div>
+            )}
             <div className="flex gap-2">
               <Button type="submit" className="w-full">
                 {signUpMode ? "Create account" : "Log in"}
