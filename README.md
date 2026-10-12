@@ -9,59 +9,7 @@ with AJV, and watch execution logs stream in live.
 Next.js 16 (App Router) · TypeScript · Tailwind CSS · shadcn/ui-style components ·
 Supabase (Postgres, Auth, Realtime) · AJV
 
-## 1. Supabase setup
-
-1. Create a project at https://supabase.com.
-2. In the SQL editor, run `schema.sql` (tables, workspaces, RLS policies, usage views, and quota/retention functions). Re-run it after updates; the additions are designed to be safe for existing data.
-3. **Enable Realtime** on the `logs` table: Database → Replication → toggle
-   `public.logs` on. This powers the live-updating log table on the dashboard.
-4. Auth → Providers: enable **GitHub** OAuth if you want that login option
-   (set the callback URL to `https://<your-domain>/auth/callback`).
-5. Project Settings → API: copy the Project URL, anon key, and service role key.
-
-## 2. Environment variables
-
-Copy `.env.example` to `.env.local` and fill in the Supabase values plus your
-deployment URL:
-
-```
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-NEXT_PUBLIC_APP_URL=
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
-CRON_SECRET=
-SEMANTIC_JUDGE_BASE_URL=https://api.openai.com/v1
-SEMANTIC_JUDGE_API_KEY=
-SEMANTIC_JUDGE_MODEL=
-DODO_PAYMENTS_API_KEY=
-DODO_PAYMENTS_WEBHOOK_KEY=
-DODO_PAYMENTS_ENVIRONMENT=test_mode
-DODO_PAYMENTS_SOLO_PRODUCT_ID=
-DODO_PAYMENTS_TEAM_PRODUCT_ID=
-```
-
-`SUPABASE_SERVICE_ROLE_KEY` is used only in `lib/supabase/server.ts`
-(`createAdminClient`) by the public gateway route — it is never sent to the
-browser. Keep it out of any `NEXT_PUBLIC_*` variable.
-
-Create an Upstash Redis database and set its REST URL and token in the two
-`UPSTASH_REDIS_*` variables. The gateway allows 60 requests per minute per
-client IP and 120 requests per minute per tool. In production, the gateway
-returns `503` if rate limiting is not configured or Upstash is unavailable;
-local development can run without Upstash credentials.
-
-## 3. Install & run
-
-```bash
-npm install
-npm run dev
-```
-
-Visit `http://localhost:3000`, sign up, and you'll land on `/dashboard`.
-
-## 4. How the gateway works
+# How the gateway works
 
 Each tool you create gets a URL:
 
@@ -89,7 +37,7 @@ cannot be checked against earlier calls in that run.
 `GET` on the same URL returns the tool's schema and description, handy for a
 quick sanity check in a browser.
 
-## 5. Client SDKs
+##  Client SDKs
 
 The JavaScript/TypeScript client is published on npm as `trymockagent`. It calls
 tools with JSON, associates calls with a run ID, retrieves a tool's schema, and
@@ -132,17 +80,8 @@ protection. Both SDKs expose error status, response body, retryability, and
 full examples are in [`packages/mockagent-js`](./packages/mockagent-js) and
 [`packages/mockagent-python`](./packages/mockagent-python).
 
-## 6. Deploying to Vercel
 
-1. Push this repo to GitHub.
-2. Import it in Vercel, add the same env vars from `.env.local`.
-3. Set `NEXT_PUBLIC_APP_URL` to your production domain (e.g.
-   `https://mockagent.online`) — it's used to build the gateway URLs
-   shown in the dashboard.
-4. Deploy.
-5. Set `CRON_SECRET` in Vercel. Vercel sends it to the scheduled cleanup route as a bearer token.
-
-## 7. Scenarios, keys, and teams
+##  Scenarios, keys, and teams
 
 - Add ordered JSON Schema match scenarios to a mock tool. A scenario can return one `response` or a `responses` sequence; otherwise the default response is returned. For a sequence, use a new `x-mockagent-run-id` per test run and pass it on each call. Responses advance per matching successful call and the last response repeats. Without a run ID, each call receives the first response.
 - Successful logs keep response snapshots, sequence steps, and run IDs; the dashboard lets you inspect the returned JSON. Replay compares the configured response for that saved step without adding a gateway log.
