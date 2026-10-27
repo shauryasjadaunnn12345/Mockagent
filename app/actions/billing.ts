@@ -2,7 +2,7 @@
 
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { getDodoClient } from "@/lib/dodo";
-import { dodoProductId, type PaidPlan } from "@/lib/billing";
+import { checkoutRestriction, dodoProductId, type PaidPlan } from "@/lib/billing";
 
 async function getManagedWorkspace(workspaceId: string) {
   const supabase = await createClient();
@@ -20,7 +20,7 @@ async function getManagedWorkspace(workspaceId: string) {
 
   const { data: workspace, error } = await supabase
     .from("workspaces")
-    .select("id,name,dodo_customer_id,dodo_environment,plan,subscription_status")
+    .select("id,name,dodo_customer_id,dodo_subscription_id,dodo_environment,plan,subscription_status")
     .eq("id", workspaceId)
     .maybeSingle();
   if (error || !workspace) return { error: "Workspace not found." } as const;
@@ -39,9 +39,11 @@ export async function createCheckoutSession(
 
   const result = await getManagedWorkspace(workspaceId);
   if ("error" in result) return { success: false, error: result.error ?? "Workspace access failed." };
-  if (["active", "past_due"].includes(result.workspace.subscription_status)) {
-    return { success: false, error: "Manage the current subscription in the billing portal." };
-  }
+  const restriction = checkoutRestriction(
+    result.workspace.dodo_subscription_id,
+    result.workspace.subscription_status
+  );
+  if (restriction) return { success: false, error: restriction };
 
   if (!result.user.email) {
     return { success: false, error: "A verified email address is required for subscription checkout." };

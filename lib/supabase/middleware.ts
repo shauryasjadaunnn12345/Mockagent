@@ -1,4 +1,4 @@
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
@@ -7,25 +7,25 @@ import { NextResponse, type NextRequest } from "next/server";
  * root middleware.ts.
  */
 export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request: { headers: request.headers } });
+  let cookiesToSet: Array<{
+    name: string;
+    value: string;
+    options: Parameters<NextResponse["cookies"]["set"]>[2];
+  }> = [];
+  let responseHeaders: Record<string, string> = {};
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
+        getAll() {
+          return request.cookies.getAll();
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({ name, value, ...options });
-          response = NextResponse.next({ request: { headers: request.headers } });
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({ name, value: "", ...options });
-          response = NextResponse.next({ request: { headers: request.headers } });
-          response.cookies.set({ name, value: "", ...options });
+        setAll(updatedCookies, headers) {
+          updatedCookies.forEach(({ name, value }) => request.cookies.set(name, value));
+          cookiesToSet = updatedCookies;
+          responseHeaders = headers;
         },
       },
     }
@@ -33,15 +33,39 @@ export async function updateSession(request: NextRequest) {
 
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
 
-  // Protect the dashboard: bounce unauthenticated users to /login
+  const staleAuthCookieNames =
+    error?.code === "refresh_token_not_found"
+      ? request.cookies
+          .getAll()
+          .map(({ name }) => name)
+          .filter((name) => /^sb-.+-auth-token(?:\.\d+)?$/.test(name))
+      : [];
+
+  staleAuthCookieNames.forEach((name) => request.cookies.delete(name));
+
+  // Protect the dashboard: bounce unauthenticated users to /login.
   const isDashboardRoute = request.nextUrl.pathname.startsWith("/dashboard");
+  let response: NextResponse;
   if (isDashboardRoute && !user) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
-    return NextResponse.redirect(redirectUrl);
+    response = NextResponse.redirect(redirectUrl);
+  } else {
+    response = NextResponse.next({ request: { headers: request.headers } });
   }
+
+  cookiesToSet.forEach(({ name, value, options }) => {
+    response.cookies.set(name, value, options);
+  });
+  Object.entries(responseHeaders).forEach(([name, value]) => {
+    response.headers.set(name, value);
+  });
+  staleAuthCookieNames.forEach((name) => {
+    response.cookies.set(name, "", { maxAge: 0, path: "/" });
+  });
 
   return response;
 }

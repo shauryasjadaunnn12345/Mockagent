@@ -16,6 +16,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { InteractiveToolDemo } from "@/app/InteractiveToolDemo";
 
 const capabilities = [
   {
@@ -160,7 +161,7 @@ export default async function HomePage() {
                 <span className="text-xs font-medium text-[#6c7c72]">workspace / tools / issue_refund</span>
               </div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e8f5e9] px-2.5 py-1 text-[11px] font-semibold text-[#34724f]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#4b9a62]" /> GATEWAY ONLINE
+                <span className="h-1.5 w-1.5 rounded-full bg-[#4b9a62]" /> INTERACTIVE DEMO
               </span>
             </div>
 
@@ -171,7 +172,7 @@ export default async function HomePage() {
                     <p className="text-xs font-semibold uppercase text-[#819087]">Execution log</p>
                     <h2 className="mt-1 text-lg font-semibold text-[#19362a]">Recent tool calls</h2>
                   </div>
-                  <span className="rounded-md bg-[#f0f4ee] px-2 py-1 font-mono text-[10px] text-[#587064]">LIVE</span>
+                  <span className="rounded-md bg-[#f0f4ee] px-2 py-1 font-mono text-[10px] text-[#587064]">SAMPLE</span>
                 </div>
                 <div className="space-y-2">
                   <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg border border-[#d9eadb] bg-[#f5fbf5] px-3 py-3">
@@ -201,22 +202,13 @@ export default async function HomePage() {
                 </div>
               </div>
 
-              <div className="bg-[#172b25] p-4 text-[#dbe7d9] sm:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase text-[#91a79b]">Scenario response</p>
-                    <h3 className="mt-1 text-sm font-semibold text-white">VIP user</h3>
-                  </div>
-                  <span className="rounded-md border border-[#496459] px-2 py-1 font-mono text-[10px] text-[#b2c8b8]">MATCHED</span>
-                </div>
-                <pre className="mt-5 overflow-x-auto rounded-lg border border-[#334b40] bg-[#10221c] p-4 font-mono text-xs leading-6 text-[#d8e7d2]"><code><span className="text-[#9bc7a6]">POST</span> /api/v1/mock/tool_id<br /><br /><span className="text-[#90ab9b]">input</span><br />{`{\n  "user_id": "vip",\n  "reason": "duplicate"\n}`}<br /><br /><span className="text-[#90ab9b]">mock response</span><br /><span className="text-[#d9ef83]">{`{ "success": true,\n  "message": "VIP refund processed." }`}</span></code></pre>
-                <div className="mt-4 flex items-center gap-2 text-[11px] text-[#a9c0b0]">
-                  <KeyRound className="h-3.5 w-3.5 text-[#d9ef83]" aria-hidden="true" />
-                  Add bearer-key protection when a mock is ready to share.
-                </div>
-              </div>
+              <InteractiveToolDemo />
             </div>
           </div>
+          <p className="flex items-center gap-2 px-4 py-3 text-[11px] text-[#6b7d72] sm:px-6">
+            <KeyRound className="h-3.5 w-3.5 text-[#39805d]" aria-hidden="true" />
+            In your workspace, each test also appears in execution logs. Add bearer-key protection when a mock is ready to share.
+          </p>
         </div>
         <a href="#overview" className="mt-8 inline-flex items-center gap-2 text-xs font-semibold uppercase text-[#718278] transition hover:text-[#245b45]">
           Explore the workflow <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />

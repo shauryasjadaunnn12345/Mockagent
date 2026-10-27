@@ -1,4 +1,4 @@
-import { validateAgainstSchema } from "@/lib/validators";
+import { validateAgainstSchema } from "./validators.ts";
 
 export interface MockScenario {
   name: string;

@@ -29,6 +29,38 @@ alter table public.workspaces add column if not exists dodo_subscription_id text
 alter table public.workspaces add column if not exists dodo_environment text;
 alter table public.workspaces add column if not exists current_period_end timestamptz;
 
+alter table public.workspaces drop constraint if exists workspaces_plan_check;
+alter table public.workspaces
+  add constraint workspaces_plan_check check (plan in ('free', 'solo', 'team'));
+alter table public.workspaces drop constraint if exists workspaces_subscription_status_check;
+alter table public.workspaces
+  add constraint workspaces_subscription_status_check
+  check (subscription_status in ('free', 'pending', 'active', 'past_due', 'on_hold', 'paused', 'cancelled', 'failed', 'expired'));
+alter table public.workspaces drop constraint if exists workspaces_log_retention_days_check;
+alter table public.workspaces
+  add constraint workspaces_log_retention_days_check check (log_retention_days in (7, 30, 90));
+alter table public.workspaces drop constraint if exists workspaces_dodo_environment_check;
+alter table public.workspaces
+  add constraint workspaces_dodo_environment_check
+  check (dodo_environment is null or dodo_environment in ('test_mode', 'live_mode'));
+alter table public.workspaces drop constraint if exists workspaces_plan_entitlement_check;
+alter table public.workspaces
+  add constraint workspaces_plan_entitlement_check
+  check (
+    (subscription_status in ('active', 'past_due') and plan in ('solo', 'team')) or
+    (subscription_status not in ('active', 'past_due') and plan = 'free')
+  );
+alter table public.workspaces drop constraint if exists workspaces_retention_plan_limit_check;
+alter table public.workspaces
+  add constraint workspaces_retention_plan_limit_check
+  check (
+    log_retention_days <= case
+      when plan = 'team' and subscription_status in ('active', 'past_due') then 90
+      when plan = 'solo' and subscription_status in ('active', 'past_due') then 30
+      else 7
+    end
+  );
+
 create table if not exists public.workspace_members (
   workspace_id     uuid not null references public.workspaces (id) on delete cascade,
   user_id          uuid not null references auth.users (id) on delete cascade,
@@ -171,6 +203,205 @@ comment on table public.tools is 'User-defined mock tool endpoints for AI agent 
 create index if not exists tools_user_id_idx on public.tools (user_id);
 create index if not exists tools_created_at_idx on public.tools (created_at desc);
 
+-- ---------------------------------------------------------------------
+-- tool_revisions: bounded history of editable tool configuration
+-- ---------------------------------------------------------------------
+create table if not exists public.tool_revisions (
+  id           uuid primary key default uuid_generate_v4(),
+  tool_id      uuid not null references public.tools (id) on delete cascade,
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  edited_by    uuid references auth.users (id) on delete set null,
+  snapshot     jsonb not null,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists tool_revisions_tool_created_idx
+  on public.tool_revisions (tool_id, created_at desc);
+
+create or replace function public.snapshot_tool_configuration()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if row(
+    old.name,
+    old.description,
+    old.json_schema,
+    old.mock_response,
+    old.scenarios,
+    old.final_answer_assertions,
+    old.semantic_criteria
+  ) is not distinct from row(
+    new.name,
+    new.description,
+    new.json_schema,
+    new.mock_response,
+    new.scenarios,
+    new.final_answer_assertions,
+    new.semantic_criteria
+  ) then
+    return new;
+  end if;
+
+  insert into public.tool_revisions (tool_id, workspace_id, edited_by, snapshot)
+  values (
+    old.id,
+    old.workspace_id,
+    auth.uid(),
+    jsonb_build_object(
+      'name', old.name,
+      'description', old.description,
+      'json_schema', old.json_schema,
+      'mock_response', old.mock_response,
+      'scenarios', old.scenarios,
+      'final_answer_assertions', old.final_answer_assertions,
+      'semantic_criteria', old.semantic_criteria
+    )
+  );
+
+  delete from public.tool_revisions
+  where tool_id = old.id
+    and id not in (
+      select id
+      from public.tool_revisions
+      where tool_id = old.id
+      order by created_at desc, id desc
+      offset 50
+    );
+
+  return new;
+end;
+$$;
+
+revoke all on function public.snapshot_tool_configuration() from public, anon, authenticated;
+
+drop trigger if exists tools_snapshot_configuration on public.tools;
+create trigger tools_snapshot_configuration
+  before update on public.tools
+  for each row execute function public.snapshot_tool_configuration();
+
+-- ---------------------------------------------------------------------
+-- agent_test_suites and agent_test_runs: saved Playground regressions
+-- ---------------------------------------------------------------------
+create table if not exists public.agent_test_suites (
+  id                    uuid primary key default uuid_generate_v4(),
+  workspace_id          uuid not null references public.workspaces (id) on delete cascade,
+  created_by            uuid not null references auth.users (id) on delete cascade,
+  name                  text not null check (char_length(trim(name)) between 1 and 80),
+  prompt                text not null check (char_length(trim(prompt)) between 1 and 5000),
+  test_cases            jsonb not null default '[]'::jsonb,
+  tool_ids              uuid[] not null check (cardinality(tool_ids) between 1 and 8),
+  expected_tool_ids     uuid[],
+  required_answer_text  text[] not null default '{}'::text[],
+  response_assertions   jsonb not null default '[]'::jsonb,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+  constraint agent_test_suites_has_expectation
+    check (
+      expected_tool_ids is not null or
+      cardinality(required_answer_text) > 0 or
+      case
+        when jsonb_typeof(response_assertions) = 'array'
+          then jsonb_array_length(response_assertions) > 0
+        else false
+      end
+    ),
+  constraint agent_test_suites_response_assertions_limit
+    check (
+      case
+        when jsonb_typeof(response_assertions) = 'array'
+          then jsonb_array_length(response_assertions) <= 20
+        else false
+      end
+    ),
+  check (cardinality(required_answer_text) <= 20)
+);
+
+alter table public.agent_test_suites
+  add column if not exists test_cases jsonb;
+update public.agent_test_suites
+set test_cases = jsonb_build_array(jsonb_build_object('name', 'Case 1', 'prompt', prompt))
+where test_cases is null or test_cases = '[]'::jsonb;
+alter table public.agent_test_suites
+  alter column test_cases set default '[]'::jsonb,
+  alter column test_cases set not null;
+alter table public.agent_test_suites
+  drop constraint if exists agent_test_suites_test_cases_limit;
+alter table public.agent_test_suites
+  add constraint agent_test_suites_test_cases_limit
+  check (
+    case
+      when jsonb_typeof(test_cases) = 'array'
+        then jsonb_array_length(test_cases) between 1 and 20
+      else false
+    end
+  );
+
+create index if not exists agent_test_suites_workspace_created_idx
+  on public.agent_test_suites (workspace_id, created_at desc);
+
+create table if not exists public.agent_test_runs (
+  id               uuid primary key default uuid_generate_v4(),
+  suite_id         uuid not null references public.agent_test_suites (id) on delete cascade,
+  workspace_id     uuid not null references public.workspaces (id) on delete cascade,
+  run_id           text not null,
+  status           text not null check (status in ('passed', 'failed')),
+  test_case_index  integer not null default 0 check (test_case_index between 0 and 19),
+  test_case_name   text not null default 'Case 1' check (char_length(trim(test_case_name)) between 1 and 80),
+  actual_tool_ids  uuid[] not null default '{}'::uuid[],
+  answer           text not null,
+  checks           jsonb not null default '[]'::jsonb,
+  model            text not null,
+  created_at       timestamptz not null default now()
+);
+alter table public.agent_test_runs
+  add column if not exists test_case_index integer not null default 0,
+  add column if not exists test_case_name text not null default 'Case 1';
+alter table public.agent_test_runs
+  drop constraint if exists agent_test_runs_test_case_index_check;
+alter table public.agent_test_runs
+  add constraint agent_test_runs_test_case_index_check
+  check (test_case_index between 0 and 19);
+alter table public.agent_test_runs
+  drop constraint if exists agent_test_runs_test_case_name_check;
+alter table public.agent_test_runs
+  add constraint agent_test_runs_test_case_name_check
+  check (char_length(trim(test_case_name)) between 1 and 80);
+
+create index if not exists agent_test_runs_suite_created_idx
+  on public.agent_test_runs (suite_id, created_at desc);
+create index if not exists agent_test_runs_workspace_created_idx
+  on public.agent_test_runs (workspace_id, created_at desc, id desc);
+
+create or replace function public.trim_agent_test_runs()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  delete from public.agent_test_runs
+  where suite_id = new.suite_id
+    and id not in (
+      select id
+      from public.agent_test_runs
+      where suite_id = new.suite_id
+      order by created_at desc, id desc
+      offset 50
+    );
+  return new;
+end;
+$$;
+
+revoke all on function public.trim_agent_test_runs() from public, anon, authenticated;
+
+drop trigger if exists agent_test_runs_trim_history on public.agent_test_runs;
+create trigger agent_test_runs_trim_history
+  after insert on public.agent_test_runs
+  for each row execute function public.trim_agent_test_runs();
+
 create or replace function public.enforce_workspace_tool_limit()
 returns trigger
 language plpgsql
@@ -215,6 +446,11 @@ $$;
 drop trigger if exists tools_set_updated_at on public.tools;
 create trigger tools_set_updated_at
   before update on public.tools
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists agent_test_suites_set_updated_at on public.agent_test_suites;
+create trigger agent_test_suites_set_updated_at
+  before update on public.agent_test_suites
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------
@@ -288,6 +524,62 @@ create table if not exists public.workspace_usage (
   primary key (workspace_id, usage_month)
 );
 alter table public.workspace_usage enable row level security;
+
+create table if not exists public.ai_workspace_usage (
+  workspace_id     uuid not null references public.workspaces (id) on delete cascade,
+  usage_month      date not null,
+  requests_used    integer not null default 0 check (requests_used >= 0),
+  primary key (workspace_id, usage_month)
+);
+alter table public.ai_workspace_usage enable row level security;
+revoke all on public.ai_workspace_usage from public, anon, authenticated;
+grant select on public.ai_workspace_usage to service_role;
+
+create or replace function public.consume_ai_request(target_workspace_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  allowed_limit integer;
+  request_count integer;
+  current_month date := date_trunc('month', timezone('UTC', now()))::date;
+begin
+  select case
+    when plan = 'team' and subscription_status in ('active', 'past_due') then 5000
+    when plan = 'solo' and subscription_status in ('active', 'past_due') then 1000
+    else 100
+  end into allowed_limit
+  from public.workspaces
+  where id = target_workspace_id;
+
+  if allowed_limit is null then
+    return -2;
+  end if;
+
+  insert into public.ai_workspace_usage (workspace_id, usage_month, requests_used)
+  values (target_workspace_id, current_month, 0)
+  on conflict do nothing;
+
+  select requests_used into request_count
+  from public.ai_workspace_usage
+  where workspace_id = target_workspace_id and usage_month = current_month
+  for update;
+
+  if request_count >= allowed_limit then
+    return -1;
+  end if;
+
+  update public.ai_workspace_usage
+  set requests_used = requests_used + 1
+  where workspace_id = target_workspace_id and usage_month = current_month;
+
+  return request_count + 1;
+end;
+$$;
+revoke all on function public.consume_ai_request(uuid) from public, anon, authenticated;
+grant execute on function public.consume_ai_request(uuid) to service_role;
 
 create table if not exists public.dodo_webhook_events (
   webhook_id       text primary key,
@@ -576,6 +868,34 @@ alter table public.final_answer_submissions
   add column if not exists semantic_status text not null default 'not_configured'
     check (semantic_status in ('not_configured', 'passed', 'failed', 'error')),
   add column if not exists semantic_result jsonb;
+alter table public.agent_test_suites
+  add column if not exists response_assertions jsonb not null default '[]'::jsonb;
+alter table public.agent_test_suites
+  drop constraint if exists agent_test_suites_check;
+alter table public.agent_test_suites
+  drop constraint if exists agent_test_suites_has_expectation;
+alter table public.agent_test_suites
+  add constraint agent_test_suites_has_expectation
+    check (
+      expected_tool_ids is not null or
+      cardinality(required_answer_text) > 0 or
+      case
+        when jsonb_typeof(response_assertions) = 'array'
+          then jsonb_array_length(response_assertions) > 0
+        else false
+      end
+    );
+alter table public.agent_test_suites
+  drop constraint if exists agent_test_suites_response_assertions_limit;
+alter table public.agent_test_suites
+  add constraint agent_test_suites_response_assertions_limit
+    check (
+      case
+        when jsonb_typeof(response_assertions) = 'array'
+          then jsonb_array_length(response_assertions) <= 20
+        else false
+      end
+    );
 alter table public.logs
   add column if not exists scenario_name text,
   add column if not exists response_body jsonb,
@@ -609,6 +929,9 @@ create index if not exists final_answer_submissions_tool_run_idx
 -- Row Level Security
 -- ---------------------------------------------------------------------
 alter table public.tools enable row level security;
+alter table public.tool_revisions enable row level security;
+alter table public.agent_test_suites enable row level security;
+alter table public.agent_test_runs enable row level security;
 alter table public.logs  enable row level security;
 alter table public.final_answer_submissions enable row level security;
 alter table public.api_keys enable row level security;
@@ -703,6 +1026,49 @@ drop policy if exists "tools_delete_own" on public.tools;
 create policy "tools_delete_own"
   on public.tools for delete
   using (public.is_workspace_member(workspace_id));
+
+drop policy if exists "tool_revisions_select_workspace" on public.tool_revisions;
+create policy "tool_revisions_select_workspace"
+  on public.tool_revisions for select
+  to authenticated
+  using (public.is_workspace_member(workspace_id));
+
+revoke all on public.tool_revisions from anon, authenticated;
+grant select on public.tool_revisions to authenticated;
+
+drop policy if exists "agent_test_suites_select_workspace" on public.agent_test_suites;
+create policy "agent_test_suites_select_workspace"
+  on public.agent_test_suites for select to authenticated
+  using (public.is_workspace_member(workspace_id));
+
+drop policy if exists "agent_test_suites_insert_workspace" on public.agent_test_suites;
+create policy "agent_test_suites_insert_workspace"
+  on public.agent_test_suites for insert to authenticated
+  with check (
+    public.is_workspace_member(workspace_id)
+    and created_by = auth.uid()
+  );
+
+drop policy if exists "agent_test_suites_update_workspace" on public.agent_test_suites;
+create policy "agent_test_suites_update_workspace"
+  on public.agent_test_suites for update to authenticated
+  using (public.is_workspace_member(workspace_id))
+  with check (public.is_workspace_member(workspace_id));
+
+drop policy if exists "agent_test_suites_delete_workspace" on public.agent_test_suites;
+create policy "agent_test_suites_delete_workspace"
+  on public.agent_test_suites for delete to authenticated
+  using (public.is_workspace_member(workspace_id));
+
+grant select, insert, update, delete on public.agent_test_suites to authenticated;
+
+drop policy if exists "agent_test_runs_select_workspace" on public.agent_test_runs;
+create policy "agent_test_runs_select_workspace"
+  on public.agent_test_runs for select to authenticated
+  using (public.is_workspace_member(workspace_id));
+
+revoke all on public.agent_test_runs from anon, authenticated;
+grant select on public.agent_test_runs to authenticated;
 
 -- logs: owners can read their own rows. Gateway inserts use the service role.
 -- NOTE: the gateway route (app/api/v1/mock/[toolId]/route.ts) writes logs using the

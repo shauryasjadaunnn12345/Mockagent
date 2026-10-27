@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toggleToolActive, deleteTool, setToolRequireApiKey } from "@/app/actions/tools";
+import { EditToolDialog } from "@/app/dashboard/components/EditToolDialog";
 import type { Tool } from "@/types/database";
 import { Copy, Check, Trash2 } from "lucide-react";
 
@@ -51,7 +52,8 @@ export function ToolList({ tools, appUrl }: ToolListProps) {
                 <p className="mt-1 text-sm text-slate-500">{tool.description}</p>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+              <EditToolDialog key={`${tool.id}-${tool.updated_at}`} tool={tool} />
               <Button
                 variant="outline"
                 size="sm"

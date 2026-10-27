@@ -4,6 +4,7 @@ import { Redis } from "@upstash/redis";
 interface GatewayLimiters {
   client: Ratelimit;
   tool: Ratelimit;
+  model: Ratelimit;
 }
 
 let gatewayLimiters: GatewayLimiters | null = null;
@@ -38,6 +39,11 @@ function getGatewayLimiters(): GatewayLimiters | null {
       limiter: Ratelimit.slidingWindow(120, "1 m"),
       prefix: "mockagent:gateway:tool",
     }),
+    model: new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(10, "1 m"),
+      prefix: "mockagent:ai:workspace",
+    }),
   };
 
   return gatewayLimiters;
@@ -50,7 +56,7 @@ export function isGatewayRateLimitConfigured() {
   );
 }
 
-export async function checkGatewayRateLimit(scope: "client" | "tool", key: string) {
+export async function checkGatewayRateLimit(scope: "client" | "tool" | "model", key: string) {
   const limiters = getGatewayLimiters();
   if (!limiters) {
     throw new Error("Gateway rate limiting is not configured.");

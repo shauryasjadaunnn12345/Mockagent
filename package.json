@@ -6,8 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test lib/final-answer-assertions.test.mjs",
+    "test": "node --test lib/final-answer-assertions.test.mjs lib/agent-playground.test.mjs lib/tool-definition.test.mjs lib/regression-suites.test.mjs lib/run-traces.test.mjs lib/regression-analytics.test.mjs lib/billing.test.mjs lib/schema-contract.test.mjs lib/deployment-config.test.mjs",
     "lint": "eslint .",
+    "check:config": "node scripts/check-deployment-config.mjs",
     "db:types": "supabase gen types typescript --project-id \"$SUPABASE_PROJECT_ID\" --schema public > types/database.ts"
   },
   "dependencies": {

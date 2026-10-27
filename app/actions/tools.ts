@@ -2,14 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
-import { validateSchemaDefinition } from "@/lib/validators";
 import { parseScenarios, resolveScenario, resolveScenarioResponse } from "@/lib/scenarios";
-import { parseFinalAnswerAssertions } from "@/lib/final-answer-assertions";
-import { parseSemanticCriteria } from "@/lib/semantic-evaluation";
 import { validateAgainstSchema } from "@/lib/validators";
 import type { Json } from "@/types/database";
 import { createHash, randomBytes } from "node:crypto";
-import { PLAN_LIMITS, type WorkspacePlan } from "@/lib/billing";
+import { effectiveWorkspacePlan, PLAN_LIMITS } from "@/lib/billing";
+import { parseToolConfiguration, type ToolConfigurationInput } from "@/lib/tool-definition";
 
 export interface CreateToolInput {
   name: string;
@@ -27,22 +25,6 @@ export interface ActionResult {
   error?: string;
 }
 
-function safeJsonParse(raw: string, fieldLabel: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      throw new Error(`${fieldLabel} must be a JSON object.`);
-    }
-    return parsed as Record<string, unknown>;
-  } catch (err) {
-    throw new Error(
-      err instanceof Error && err.message.includes("must be a JSON object")
-        ? err.message
-        : `${fieldLabel} is not valid JSON.`
-    );
-  }
-}
-
 export async function createTool(input: CreateToolInput): Promise<ActionResult> {
   const supabase = await createClient();
 
@@ -54,41 +36,11 @@ export async function createTool(input: CreateToolInput): Promise<ActionResult> 
     return { success: false, error: "You must be signed in." };
   }
 
-  if (!input.name.trim()) {
-    return { success: false, error: "Tool name is required." };
-  }
-
-  let jsonSchema: Record<string, unknown>;
-  let mockResponse: Record<string, unknown>;
-  let scenarios;
-  let finalAnswerAssertions;
-  let semanticCriteria;
+  let configuration;
   try {
-    jsonSchema = safeJsonParse(input.jsonSchema, "Expected JSON Schema");
-    mockResponse = safeJsonParse(input.mockResponse, "Mock response body");
-    scenarios = parseScenarios(JSON.parse(input.scenarios));
-    finalAnswerAssertions = parseFinalAnswerAssertions(JSON.parse(input.finalAnswerAssertions));
-    semanticCriteria = parseSemanticCriteria(input.semanticCriteria);
+    configuration = parseToolConfiguration(input);
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Invalid JSON." };
-  }
-
-  const schemaError = validateSchemaDefinition(jsonSchema);
-  if (schemaError) {
-    return {
-      success: false,
-      error: `Expected JSON Schema is invalid: ${schemaError}`,
-    };
-  }
-
-  for (const [index, scenario] of scenarios.entries()) {
-    const scenarioSchemaError = validateSchemaDefinition(scenario.match);
-    if (scenarioSchemaError) {
-      return {
-        success: false,
-        error: `Scenario ${index + 1} has an invalid match schema: ${scenarioSchemaError}`,
-      };
-    }
+    return { success: false, error: err instanceof Error ? err.message : "Invalid tool configuration." };
   }
 
   const { data: userSettings, error: settingsError } = await supabase
@@ -112,8 +64,8 @@ export async function createTool(input: CreateToolInput): Promise<ActionResult> 
     .select("plan,subscription_status")
     .eq("id", userSettings.current_workspace_id)
     .maybeSingle();
-  const plan: WorkspacePlan = workspace && ["active", "past_due"].includes(workspace.subscription_status)
-    ? workspace.plan as WorkspacePlan
+  const plan = workspace
+    ? effectiveWorkspacePlan(workspace.plan, workspace.subscription_status)
     : "free";
   const { count: toolCount } = await supabase
     .from("tools")
@@ -127,13 +79,7 @@ export async function createTool(input: CreateToolInput): Promise<ActionResult> 
   const { error } = await admin.from("tools").insert({
     user_id: user.id,
     workspace_id: userSettings.current_workspace_id,
-    name: input.name.trim(),
-    description: input.description.trim() || null,
-    json_schema: jsonSchema as Json,
-    mock_response: mockResponse as Json,
-    scenarios: scenarios as unknown as Json,
-    final_answer_assertions: finalAnswerAssertions as unknown as Json,
-    semantic_criteria: semanticCriteria,
+    ...configuration,
     require_api_key: input.requireApiKey,
   });
 
@@ -143,6 +89,174 @@ export async function createTool(input: CreateToolInput): Promise<ActionResult> 
 
   revalidatePath("/dashboard");
   return { success: true };
+}
+
+export interface ToolRevisionSummary {
+  id: string;
+  snapshot: Json;
+  created_at: string;
+}
+
+function getSnapshotConfiguration(snapshot: Json): ToolConfigurationInput | null {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
+  const value = snapshot as Record<string, Json | undefined>;
+  if (
+    typeof value.name !== "string" ||
+    (value.description !== null && typeof value.description !== "string") ||
+    !value.json_schema ||
+    typeof value.json_schema !== "object" ||
+    Array.isArray(value.json_schema) ||
+    !value.mock_response ||
+    typeof value.mock_response !== "object" ||
+    Array.isArray(value.mock_response) ||
+    !Array.isArray(value.scenarios) ||
+    !Array.isArray(value.final_answer_assertions) ||
+    (value.semantic_criteria !== null && typeof value.semantic_criteria !== "string")
+  ) {
+    return null;
+  }
+  return {
+    name: value.name,
+    description: value.description ?? "",
+    jsonSchema: JSON.stringify(value.json_schema, null, 2),
+    mockResponse: JSON.stringify(value.mock_response, null, 2),
+    scenarios: JSON.stringify(value.scenarios, null, 2),
+    finalAnswerAssertions: JSON.stringify(value.final_answer_assertions, null, 2),
+    semanticCriteria: value.semantic_criteria ?? "",
+  };
+}
+
+async function updateToolConfiguration(
+  toolId: string,
+  expectedUpdatedAt: string,
+  input: ToolConfigurationInput
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "You must be signed in." };
+  if (!toolId || !expectedUpdatedAt) {
+    return { success: false, error: "Tool and version information are required." };
+  }
+
+  let configuration;
+  try {
+    configuration = parseToolConfiguration(input);
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Invalid tool configuration.",
+    };
+  }
+
+  const { data: settings, error: settingsError } = await supabase
+    .from("user_settings")
+    .select("current_workspace_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (settingsError || !settings?.current_workspace_id) {
+    return { success: false, error: "Could not resolve the active workspace." };
+  }
+
+  const { data, error } = await supabase
+    .from("tools")
+    .update(configuration)
+    .eq("id", toolId)
+    .eq("workspace_id", settings.current_workspace_id)
+    .eq("updated_at", expectedUpdatedAt)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("MockAgent: failed to update tool configuration", error.message);
+    return { success: false, error: "Could not update the tool. Please try again." };
+  }
+  if (!data) {
+    return {
+      success: false,
+      error: "This tool changed since you opened it. Refresh the dashboard and try again.",
+    };
+  }
+
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+
+export async function updateTool(
+  toolId: string,
+  expectedUpdatedAt: string,
+  input: ToolConfigurationInput
+): Promise<ActionResult> {
+  return updateToolConfiguration(toolId, expectedUpdatedAt, input);
+}
+
+export async function getToolRevisions(
+  toolId: string
+): Promise<{ success: true; revisions: ToolRevisionSummary[] } | { success: false; error: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "You must be signed in." };
+
+  const { data: settings, error: settingsError } = await supabase
+    .from("user_settings")
+    .select("current_workspace_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (settingsError || !settings?.current_workspace_id) {
+    return { success: false, error: "Could not resolve the active workspace." };
+  }
+
+  const { data, error } = await supabase
+    .from("tool_revisions")
+    .select("id,snapshot,created_at")
+    .eq("tool_id", toolId)
+    .eq("workspace_id", settings.current_workspace_id)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) {
+    console.error("MockAgent: failed to load tool revisions", error.message);
+    return {
+      success: false,
+      error: "Could not load revision history. Ensure the latest schema.sql has been run.",
+    };
+  }
+
+  return { success: true, revisions: data ?? [] };
+}
+
+export async function restoreToolRevision(
+  toolId: string,
+  revisionId: string,
+  expectedUpdatedAt: string
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "You must be signed in." };
+
+  const { data: settings, error: settingsError } = await supabase
+    .from("user_settings")
+    .select("current_workspace_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (settingsError || !settings?.current_workspace_id) {
+    return { success: false, error: "Could not resolve the active workspace." };
+  }
+
+  const { data: revision, error } = await supabase
+    .from("tool_revisions")
+    .select("snapshot")
+    .eq("id", revisionId)
+    .eq("tool_id", toolId)
+    .eq("workspace_id", settings.current_workspace_id)
+    .maybeSingle();
+  if (error || !revision) {
+    return { success: false, error: "That revision was not found in the active workspace." };
+  }
+
+  const configurationInput = getSnapshotConfiguration(revision.snapshot);
+  if (!configurationInput) {
+    return { success: false, error: "That revision contains an invalid tool configuration." };
+  }
+  return updateToolConfiguration(toolId, expectedUpdatedAt, configurationInput);
 }
 
 export async function toggleToolActive(toolId: string, isActive: boolean): Promise<ActionResult> {
@@ -255,8 +369,8 @@ export async function createApiKey(
     .select("plan,subscription_status")
     .eq("id", userSettings.current_workspace_id)
     .maybeSingle();
-  const plan: WorkspacePlan = workspace && ["active", "past_due"].includes(workspace.subscription_status)
-    ? workspace.plan as WorkspacePlan
+  const plan = workspace
+    ? effectiveWorkspacePlan(workspace.plan, workspace.subscription_status)
     : "free";
   const { count: activeKeys } = await supabase
     .from("api_keys")

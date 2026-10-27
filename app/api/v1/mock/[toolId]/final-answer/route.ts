@@ -13,8 +13,10 @@ import {
 import {
   evaluateSemanticAnswer,
   parseSemanticCriteria,
+  type SemanticEvaluation,
   type SemanticCallEvidence,
 } from "@/lib/semantic-evaluation";
+import { enforceAIRequestBudget } from "@/lib/ai-usage";
 import type { Json } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -176,11 +178,37 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     ? assertionResults.every((result) => result.passed)
     : null;
   const passed = literalPassed ?? false;
-  const semanticEvaluation = await evaluateSemanticAnswer(
-    semanticCriteria,
-    answer,
-    semanticEvidence
-  );
+  let semanticEvaluation: SemanticEvaluation;
+  if (
+    semanticCriteria &&
+    semanticEvidence.length > 0 &&
+    process.env.SEMANTIC_JUDGE_API_KEY?.trim() &&
+    process.env.SEMANTIC_JUDGE_MODEL?.trim()
+  ) {
+    const budget = await enforceAIRequestBudget(supabase, tool.workspace_id);
+    if (budget.response) {
+      const budgetError: unknown = await budget.response.json();
+      const rationale =
+        budgetError &&
+        typeof budgetError === "object" &&
+        typeof (budgetError as Record<string, unknown>).error === "string"
+          ? (budgetError as { error: string }).error
+          : "Semantic judge request is unavailable.";
+      semanticEvaluation = { status: "error", passed: null, rationale };
+    } else {
+      semanticEvaluation = await evaluateSemanticAnswer(
+        semanticCriteria,
+        answer,
+        semanticEvidence
+      );
+    }
+  } else {
+    semanticEvaluation = await evaluateSemanticAnswer(
+      semanticCriteria,
+      answer,
+      semanticEvidence
+    );
+  }
   const { error: insertError } = await supabase.from("final_answer_submissions").insert({
     tool_id: tool.id,
     user_id: tool.user_id,

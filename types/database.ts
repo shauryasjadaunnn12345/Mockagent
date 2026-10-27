@@ -182,6 +182,126 @@ export type Database = {
         }
         Relationships: []
       }
+      tool_revisions: {
+        Row: {
+          created_at: string
+          edited_by: string | null
+          id: string
+          snapshot: Json
+          tool_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          edited_by?: string | null
+          id?: string
+          snapshot: Json
+          tool_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          edited_by?: string | null
+          id?: string
+          snapshot?: Json
+          tool_id?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
+      agent_test_suites: {
+        Row: {
+          created_at: string
+          created_by: string
+          expected_tool_ids: string[] | null
+          id: string
+          name: string
+          prompt: string
+          test_cases: Json
+          required_answer_text: string[]
+          response_assertions: Json
+          tool_ids: string[]
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          expected_tool_ids?: string[] | null
+          id?: string
+          name: string
+          prompt: string
+          test_cases?: Json
+          required_answer_text?: string[]
+          response_assertions?: Json
+          tool_ids: string[]
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          expected_tool_ids?: string[] | null
+          id?: string
+          name?: string
+          prompt?: string
+          test_cases?: Json
+          required_answer_text?: string[]
+          response_assertions?: Json
+          tool_ids?: string[]
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
+      agent_test_runs: {
+        Row: {
+          answer: string
+          checks: Json
+          created_at: string
+          id: string
+          model: string
+          actual_tool_ids: string[]
+          run_id: string
+          status: string
+          test_case_index: number
+          test_case_name: string
+          suite_id: string
+          trace: Json | null
+          workspace_id: string
+        }
+        Insert: {
+          answer: string
+          checks?: Json
+          created_at?: string
+          id?: string
+          model: string
+          actual_tool_ids?: string[]
+          run_id: string
+          status: string
+          test_case_index?: number
+          test_case_name?: string
+          suite_id: string
+          trace?: Json | null
+          workspace_id: string
+        }
+        Update: {
+          answer?: string
+          checks?: Json
+          created_at?: string
+          id?: string
+          model?: string
+          actual_tool_ids?: string[]
+          run_id?: string
+          status?: string
+          test_case_index?: number
+          test_case_name?: string
+          suite_id?: string
+          trace?: Json | null
+          workspace_id?: string
+        }
+        Relationships: []
+      }
       api_keys: {
         Row: {
           created_at: string
@@ -228,6 +348,12 @@ export type Database = {
         Row: { calls_used: number; usage_month: string; workspace_id: string }
         Insert: { calls_used?: number; usage_month: string; workspace_id: string }
         Update: { calls_used?: number; usage_month?: string; workspace_id?: string }
+        Relationships: []
+      }
+      ai_workspace_usage: {
+        Row: { requests_used: number; usage_month: string; workspace_id: string }
+        Insert: { requests_used?: number; usage_month: string; workspace_id: string }
+        Update: { requests_used?: number; usage_month?: string; workspace_id?: string }
         Relationships: []
       }
       dodo_webhook_events: {
@@ -354,6 +480,10 @@ export type Database = {
     Functions: {
       consume_gateway_call: {
         Args: { target_api_key_id?: string | null; target_workspace_id: string }
+        Returns: number
+      }
+      consume_ai_request: {
+        Args: { target_workspace_id: string }
         Returns: number
       }
       delete_expired_logs: {

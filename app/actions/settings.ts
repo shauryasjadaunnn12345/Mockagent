@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
-import { PLAN_LIMITS, type WorkspacePlan } from "@/lib/billing";
+import { effectiveWorkspacePlan, PLAN_LIMITS } from "@/lib/billing";
 
 export async function updateLogRetention(
   workspaceId: string,
@@ -32,9 +32,7 @@ export async function updateLogRetention(
     .maybeSingle();
   if (workspaceError || !workspace) return { success: false, error: "Workspace not found." };
 
-  const plan: WorkspacePlan = ["active", "past_due"].includes(workspace.subscription_status)
-    ? workspace.plan as WorkspacePlan
-    : "free";
+  const plan = effectiveWorkspacePlan(workspace.plan, workspace.subscription_status);
   if (days > PLAN_LIMITS[plan].retentionDays) {
     return { success: false, error: `The ${plan} plan allows up to ${PLAN_LIMITS[plan].retentionDays} days of log retention.` };
   }
@@ -100,8 +98,8 @@ export async function inviteWorkspaceMember(
     .select("plan,subscription_status")
     .eq("id", workspaceId)
     .maybeSingle();
-  const plan: WorkspacePlan = workspace && ["active", "past_due"].includes(workspace.subscription_status)
-    ? workspace.plan as WorkspacePlan
+  const plan = workspace
+    ? effectiveWorkspacePlan(workspace.plan, workspace.subscription_status)
     : "free";
   const { count: memberCount } = await supabase
     .from("workspace_members")
