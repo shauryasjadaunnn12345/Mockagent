@@ -220,6 +220,7 @@ export type Database = {
           test_cases: Json
           required_answer_text: string[]
           response_assertions: Json
+          semantic_criteria: string | null
           tool_ids: string[]
           updated_at: string
           workspace_id: string
@@ -234,6 +235,7 @@ export type Database = {
           test_cases?: Json
           required_answer_text?: string[]
           response_assertions?: Json
+          semantic_criteria?: string | null
           tool_ids: string[]
           updated_at?: string
           workspace_id: string
@@ -248,6 +250,7 @@ export type Database = {
           test_cases?: Json
           required_answer_text?: string[]
           response_assertions?: Json
+          semantic_criteria?: string | null
           tool_ids?: string[]
           updated_at?: string
           workspace_id?: string

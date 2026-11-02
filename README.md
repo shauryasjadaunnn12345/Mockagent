@@ -1,14 +1,54 @@
 # MockAgent
 
-**Test the tool calls your AI agent has not made yet.**
-
-[MockAgent](https://mockagent.online) gives you predictable mock endpoints for
-agent tools, so you can validate inputs, exercise edge cases, and inspect agent
-behavior without connecting to real services or triggering real side effects.
+**MockAgent tests AI-agent tool behavior before it reaches production services.**
+Define mock endpoints, schemas, scenarios, and response sequences to make edge
+cases repeatable and observable.
+Use Meta-powered coverage guidance to draft tests for behavior your agent has not exercised yet.
 
 **[Open MockAgent](https://mockagent.online)** · [Create an account](https://mockagent.online/login?mode=signup) · [Log in](https://mockagent.online/login?mode=login)
 
-## What you can do
+### 60-second demo
+
+**60-second demo GIF placeholder:** add the recording at
+[`docs/media/mockagent-demo.gif`](./docs/media/mockagent-demo.gif).
+
+### Quick start
+
+1. Sign in at [mockagent.online](https://mockagent.online) and create a mock
+   tool with a JSON Schema and response.
+2. Add a scenario for an edge case, or use Tool Studio to draft a tool with
+   Meta AI and review it before saving.
+3. Call the tool from your agent or run it in Agent Playground; inspect the
+   trace and logs.
+4. Save a regression test, then choose **Auto-improve** to measure coverage
+   and review Meta-generated cases targeting uncovered behavior.
+
+### How Meta AI is used
+
+| Workflow | Meta AI's role | What remains under your control |
+|---|---|---|
+| Tool Studio | Drafts a tool schema, response, and scenarios from a description. | Validate, edit, and confirm before the tool is saved. |
+| Agent Playground | The configured Meta model chooses among selected tools and produces the answer. Native Model API uses Responses API tool turns and encrypted reasoning replay. | MockAgent executes the selected mock tools and shows the trace; quotas and rate limits apply. |
+| Regression testing | Generates coverage-targeted test prompts, explains failed checks, drafts follow-ups, and reviews tool-contract risks. | All generated content remains a reviewable draft; coverage is measured by running confirmed tests. |
+| Semantic QA and assistant | Judges answer support against supplied tool evidence or responds to the user's question. | Treat model output as fallible; review the supplied evidence and rationale. |
+
+Tool definitions, prompts, and applicable run evidence are sent to the configured
+Meta-compatible provider. See [Meta AI Tool Studio](#meta-ai-tool-studio) for
+provider configuration and data-flow details.
+
+### Why MockAgent
+
+MockAgent focuses on mocked agent tools: schema-validated arguments,
+conditional scenarios and response sequences, observable traces, and
+coverage-guided regression-test generation from saved traces. This lets a team
+exercise tool-boundary behavior without calling live business services.
+
+**Competitor comparison: TODO — add repo-verified, sourced comparisons before
+making comparative claims.**
+
+## More features
+
+### What you can do
 
 - **Create mock tools** with a name, description, JSON Schema argument
   contract, and deterministic JSON response.
@@ -16,25 +56,14 @@ behavior without connecting to real services or triggering real side effects.
   sequences—useful for retries, stale data, and edge cases.
 - **Run an AI agent against your tools** in the Agent Playground and inspect
   the model's answer and every tool call.
+- **Generate a tool draft with Meta AI** from a plain-language description,
+  review or edit the generated schema and scenarios, then create the mock tool.
 - **Build repeatable regression tests** with named prompt cases, expected tool
   calls, answer checks, and assertions against JSON response fields.
 - **Understand changes and failures** with execution logs, schema validation
   errors, run traces, replay comparisons, and regression analytics.
 - **Control access and usage** with bearer API keys, shared workspaces, plan
   quotas, and log retention settings.
-
-## Get started
-
-1. **Create an account** at [mockagent.online](https://mockagent.online) and
-   open your workspace.
-2. Select **New Mock Tool** and provide a tool name, description, expected
-   JSON Schema, and mock response. Add conditional scenarios if different
-   inputs should return different results.
-3. Save the tool. Its card shows the endpoint URL and the matching tool
-   definition for your agent.
-4. Send a test call to the endpoint, or select the tool in the Agent Playground.
-5. Inspect the result in Execution Logs, then refine the schema, response, or
-   scenarios and run it again.
 
 ### Example mock tool
 
@@ -81,8 +110,10 @@ independent agent run and reuse that ID for the calls within that run.
 ### Mock tools, scenarios, and logs
 
 - **Edit a tool** to update its schema, response, scenarios, or assertions.
-  Previous configurations are revisioned so you can review or restore a
-  recent version.
+  Edit scenarios with a guided JSON-schema matcher/response editor and preview
+  an input locally (including a selected response-sequence step). Previous
+  configurations are revisioned so you can compare changed fields against the
+  current tool or restore a recent version.
 - **Scenarios** match request arguments against JSON Schema and return a
   scenario-specific response. A scenario may return a sequence of responses
   for testing changing data or retry behavior. Sequences advance on successful
@@ -105,13 +136,51 @@ independent agent run and reuse that ID for the calls within that run.
 
 Choose active mock tools, enter a prompt, and run the agent. MockAgent displays
 the final answer, tool calls, arguments, and responses; calls also appear in
-Execution Logs. The Playground can use up to eight selected tools and makes
-up to five tool calls per run. Tools protected by an API key are not available
-in the Playground.
+Execution Logs. The Playground can use up to 250 tools (the maximum Team plan
+tool allowance), subject to a combined JSON Schema size of 32 KB. It can
+continue making tool calls until the server request deadline or workspace AI
+rate/monthly quota is reached; each completion counts against that quota.
+
+Tools protected by an API key are supported. Enter the key for each selected
+protected tool in the Playground before running it. The key is sent to the
+matching MockAgent gateway call only; it is not included in the model prompt
+and is not saved with the run or regression test. Keep keys out of prompts and
+never paste them into the task text.
 
 The Playground uses the AI model configured for the service. Prompts, tool
 arguments, and mock responses are sent to that model provider. Do not include
 secrets or sensitive data unless that data flow is approved.
+
+### Meta AI Tool Studio
+
+Describe a tool in plain language to generate a draft containing a name,
+description, JSON Schema, mock response, and conditional scenarios. MockAgent
+validates the generated schema and scenario matchers before showing the draft.
+Review and edit the JSON, then create the tool; the normal server-side tool
+validation and workspace plan limits apply again when it is saved.
+
+Tool generation, the dashboard assistant, regression-case generation,
+failure explanations, and Semantic QA use the configured Meta model provider.
+For direct first-party Meta Model API access, set `MODEL_API_KEY`; MockAgent
+then uses `https://api.meta.ai/v1` and `muse-spark-1.3` by default. `META_MODEL`
+can select another Muse Spark or Muse Wonder text model. The Playground queries
+Meta's authenticated `/models` catalog and exposes the available models in its
+model selector. Model API keys stay server-side.
+
+The Agent Playground uses Meta's Responses API for native Model API
+configurations. It executes developer-defined mock tools itself, returns each
+tool result to Muse, and replays encrypted reasoning items between turns with
+`store: false` so conversation state is not stored by the model API. Every
+model turn still consumes one workspace AI request. The Responses API provides
+the tool-use loop with reasoning continuity; other Meta-powered features use
+the compatible chat-completions endpoint.
+
+For existing deployments or hosted open-weight inference, the
+`SEMANTIC_JUDGE_BASE_URL`, `SEMANTIC_JUDGE_API_KEY`, and
+`SEMANTIC_JUDGE_MODEL` variables remain supported as a Baseten-compatible
+fallback (defaulting to Muse Spark Open). If both providers are configured,
+`MODEL_API_KEY` takes precedence. Generated content is a draft and should be
+reviewed before use.
 
 ### Regression tests
 
@@ -121,17 +190,121 @@ selected tools, and checks for expected behavior. Available checks include:
 - The exact ordered tool-call sequence.
 - Required phrases in the final answer.
 - JSON response fields, checked with equals, contains, exists, greater-than,
-  or less-than assertions.
+  less-than, or JSON Schema shape assertions. A schema assertion can enforce
+  required fields, types, allowed values, array item shapes, and
+  `additionalProperties` on a whole response or nested object. Assertions can
+  target the first call or require every call to the chosen tool to pass.
+- Optional semantic answer criteria evaluated against successful tool
+  responses and timestamps by the configured model judge.
 
 Run a single test or choose **Run all** to execute every saved case. Results,
 checks, run IDs, and bounded traces are recorded per case. A test passes only
 when its configured checks pass and its tool requests succeed. Phrase checks
 are case-insensitive text matches; they do not prove an answer is factually
-correct.
+correct. Semantic QA adds model-based evidence checking but is also fallible
+and should not be treated as proof of correctness.
 
 Each case can make multiple model requests and consume AI usage. **Run all**
 shows a confirmation first, and **Stop after current** prevents remaining
 cases from starting while allowing the active case to finish.
+
+Use **Generate with Meta AI** in the test-case editor to draft prompt cases
+from the selected tools' schemas, mock responses, and scenarios. Add an
+optional focus hint; generated cases are editable and are not saved until you
+review and save the regression test. From a failed saved run, choose **Explain & draft follow-up** to ask Meta for an
+evidence-linked explanation and then draft follow-up cases from the failed
+checks and bounded trace. Review and edit the explanation and cases; choose
+**Save reviewed follow-up test** to persist a new test that retains the source
+test's configured checks. This combined action makes two AI requests (one
+explanation and one generation request), each subject to the workspace's normal
+usage and rate limits.
+
+Choose **Target coverage gaps** to ask Meta to prioritize arguments, enum
+values, scenarios, and response-sequence steps not yet observed in the latest
+100 saved regression traces for the selected tools. The generated prompts are
+still drafts: only rerunning the saved cases can confirm whether they cover
+those targets.
+
+Choose **Auto-improve** on a saved test to run its baseline cases, measure
+coverage for its selected tools, and ask Meta to draft cases aimed at the
+uncovered arguments, enum values, scenarios, and response-sequence steps. The
+loop is capped at two or three rounds. Each round shows the measured coverage
+before and after its cases run, plus case outcomes and the coverage delta.
+Meta's draft remains editable and is neither saved nor run until you choose
+**Save & run round N**. Confirmed rounds use the same saved-test execution,
+workspace quotas, and rate limits as other runs. Generated round tests do not
+inherit sequence, response, or answer assertions from the baseline; add those
+checks to the saved test when needed. Coverage depends on the configured
+selected tools and available saved traces, so increases are measured
+observations, not a guarantee of agent correctness.
+
+Choose **Review contract risks** for an advisory Meta review of the selected
+tool schemas, mock responses, scenarios, and uncovered coverage points. Each
+finding includes a severity, a JSON Pointer validated against the supplied
+contract, a potential failure mode, and a suggested prompt. Use **Add as
+draft** to place a finding's prompt in the editable regression cases. The
+review does not modify tools or prove that a risk exists; execute and inspect
+the resulting test before changing a contract.
+
+Use **Export all** to download a versioned JSON bundle. Exports reference tools
+by name rather than workspace-specific IDs. **Import JSON** validates the
+bundle and each suite, then asks you to map every exported tool name to an
+active tool in the current workspace before saving. Imports are limited to
+50 suites and 10 MB per file; if a multi-suite import has a save error, the
+panel reports which suites were saved and which failed.
+
+For a failed saved run, **Explain & draft follow-up** combines the explanation
+and case drafting flow described above. The explanation uses the run's failed
+checks and bounded trace, and each finding must cite an actual failed check.
+Treat it as a diagnostic suggestion, not a verified root cause; inspect the
+original trace before changing the test or tool.
+
+Saved run traces show the configured model and provider. For native Meta Model
+API runs, the trace also reports whether an encrypted reasoning item was
+replayed between tool turns; it never displays the encrypted reasoning
+contents.
+
+Coverage and test analytics are limited to available saved regression traces.
+They do not represent every tool call in the workspace or guarantee agent
+correctness.
+
+### Run the demo
+
+Choose **Run demo** in the Regression Tests panel to see a seeded
+`lookup_order` → `issue_refund` failure, Meta's evidence-based explanation and
+editable regression draft, then a confirmed local rerun that checks the
+pending → ready response sequence and reports coverage improvement. The
+`lookup_order`, `issue_refund`, and `check_inventory` fixtures run in the
+browser-side sandbox with a deterministic sample agent; the demo does not
+create workspace tools or regression records, call a real business service, or
+issue a refund. Only the explanation and draft are generated by Meta. That
+review consumes one normal workspace AI request and is subject to the
+configured provider and Free-plan quotas.
+
+#### Run saved tests in CI
+
+The dependency-free Node runner at
+[`scripts/mockagent-ci.mjs`](./scripts/mockagent-ci.mjs) runs saved regression
+cases and exits nonzero if any case fails. Create a dedicated workspace API
+key in **API Keys**, set a suitable monthly call limit, and store it only as a
+CI secret. The key is workspace-scoped and can also authorize calls to
+protected tools in that workspace; revoke it from the dashboard if exposed.
+
+Configure these environment variables in the CI job:
+
+```text
+MOCKAGENT_BASE_URL=https://your-mockagent-host
+MOCKAGENT_API_KEY=ma_live_...
+MOCKAGENT_SUITE_IDS=optional,comma,separated,suite-ids
+```
+
+`MOCKAGENT_SUITE_IDS` is optional; when omitted, all saved suites in the
+workspace run. Each case executes through the saved-suite API, consuming the
+workspace's normal AI and mock-call quotas. The runner writes a GitHub Actions
+step summary when `GITHUB_STEP_SUMMARY` is available. A manual-run example is
+provided in [`.github/workflows/mockagent-regression.yml`](./.github/workflows/mockagent-regression.yml).
+
+Run the runner locally with `node scripts/mockagent-ci.mjs`.
 
 ### Analytics and run history
 
@@ -139,7 +312,12 @@ Regression analytics include pass rates, recent trends, daily results,
 recurring failed checks, test reliability, model breakdowns, and average tool
 calls for runs with valid traces. Analytics are calculated from the loaded
 history, not automatically from every retained run. Choose **Load older runs**
-to expand the history included in analytics.
+to expand the history included in analytics. Regression coverage shows which
+configured argument fields, enum values, named scenarios, and response steps
+were observed in successful saved-test traces. Coverage is explicitly scoped
+to the loaded trace history and is not a claim about all workspace traffic.
+Coverage-guided generation uses a bounded recent history of up to 100 saved
+traces and reports its targets as priorities, not guaranteed coverage.
 
 ### Assistant
 
@@ -165,8 +343,11 @@ Monthly quotas reset on the UTC month boundary. Calls that reach a quota are
 blocked until the quota resets or the workspace changes plan.
 
 Workspace owners and admins can manage members, API keys, and log retention.
-Paid plan checkout and subscription management are available from the billing
-panel when enabled for the workspace.
+Paid checkout and subscription management depend on the deployment's Dodo
+Payments configuration (API key, webhook key, environment, and plan product
+IDs), plus the provider returning a valid checkout session. Availability of
+live billing is deployment-specific; do not assume checkout is enabled on
+every instance.
 
 ## Use the API and SDKs
 
@@ -200,6 +381,20 @@ The Python SDK is available in the
 [`packages/mockagent-python`](./packages/mockagent-python) source directory;
 it has not been published to PyPI. Use the HTTP API directly if you prefer not
 to install from source.
+
+### Real-agent and CI example
+
+The [delayed-order refund example](./examples/delayed-order-refund/README.md)
+uses the published JavaScript SDK to call MockAgent tools. Run the `--buggy`
+mode to reproduce a pending-order refund regression (exit code `1`), then run
+the corrected flow. The example README includes tool setup, local SDK tests,
+and a CI snippet.
+
+The saved-suite runner
+([`scripts/mockagent-ci.mjs`](./scripts/mockagent-ci.mjs)) exits nonzero when a
+saved check fails. The manual GitHub Actions workflow
+([`.github/workflows/mockagent-regression.yml`](./.github/workflows/mockagent-regression.yml))
+shows how to run it with workspace secrets and optional suite IDs.
 
 ## Safety and data handling
 

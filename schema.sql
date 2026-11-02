@@ -292,10 +292,11 @@ create table if not exists public.agent_test_suites (
   name                  text not null check (char_length(trim(name)) between 1 and 80),
   prompt                text not null check (char_length(trim(prompt)) between 1 and 5000),
   test_cases            jsonb not null default '[]'::jsonb,
-  tool_ids              uuid[] not null check (cardinality(tool_ids) between 1 and 8),
+  tool_ids              uuid[] not null check (cardinality(tool_ids) between 1 and 250),
   expected_tool_ids     uuid[],
   required_answer_text  text[] not null default '{}'::text[],
   response_assertions   jsonb not null default '[]'::jsonb,
+  semantic_criteria     text,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
   constraint agent_test_suites_has_expectation
@@ -306,7 +307,8 @@ create table if not exists public.agent_test_suites (
         when jsonb_typeof(response_assertions) = 'array'
           then jsonb_array_length(response_assertions) > 0
         else false
-      end
+      end or
+      (semantic_criteria is not null and char_length(trim(semantic_criteria)) > 0)
     ),
   constraint agent_test_suites_response_assertions_limit
     check (
@@ -869,7 +871,13 @@ alter table public.final_answer_submissions
     check (semantic_status in ('not_configured', 'passed', 'failed', 'error')),
   add column if not exists semantic_result jsonb;
 alter table public.agent_test_suites
-  add column if not exists response_assertions jsonb not null default '[]'::jsonb;
+  add column if not exists response_assertions jsonb not null default '[]'::jsonb,
+  add column if not exists semantic_criteria text;
+alter table public.agent_test_suites
+  drop constraint if exists agent_test_suites_tool_ids_check;
+alter table public.agent_test_suites
+  add constraint agent_test_suites_tool_ids_check
+  check (cardinality(tool_ids) between 1 and 250);
 alter table public.agent_test_suites
   drop constraint if exists agent_test_suites_check;
 alter table public.agent_test_suites
@@ -883,7 +891,8 @@ alter table public.agent_test_suites
         when jsonb_typeof(response_assertions) = 'array'
           then jsonb_array_length(response_assertions) > 0
         else false
-      end
+      end or
+      (semantic_criteria is not null and char_length(trim(semantic_criteria)) > 0)
     );
 alter table public.agent_test_suites
   drop constraint if exists agent_test_suites_response_assertions_limit;

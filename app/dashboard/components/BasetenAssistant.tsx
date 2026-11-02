@@ -86,7 +86,7 @@ export function BasetenAssistant({ monthlyAIRequestsUsed, aiMonthlyRequestLimit 
           MockAgent Assistant
         </CardTitle>
         <p className="text-sm text-slate-500">
-          Ask for help designing mock tools, schemas, scenarios, or agent tests. Powered by Baseten Muse Spark Open.
+          Ask for help designing mock tools, schemas, scenarios, or agent tests. Powered by Meta Muse.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -113,7 +113,7 @@ export function BasetenAssistant({ monthlyAIRequestsUsed, aiMonthlyRequestLimit 
               </div>
             ))
           )}
-          {isLoading && <p className="text-sm text-slate-500">Baseten is thinking…</p>}
+          {isLoading && <p className="text-sm text-slate-500">Muse is thinking…</p>}
         </div>
 
         <form onSubmit={sendMessage} className="space-y-2">
@@ -133,7 +133,7 @@ export function BasetenAssistant({ monthlyAIRequestsUsed, aiMonthlyRequestLimit 
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-slate-500">
-              Messages are sent to Baseten. The assistant does not see your workspace data automatically.
+              Messages are sent to the configured Meta model provider. The assistant does not see your workspace data automatically.
               {` AI requests this month: ${aiUsage === null ? "unavailable" : `${aiUsage.toLocaleString()} / ${aiMonthlyRequestLimit.toLocaleString()}`}.`}
             </p>
             <Button type="submit" disabled={isLoading || !draft.trim()}>

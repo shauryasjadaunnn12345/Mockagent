@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { enforceAIRequestBudget } from "@/lib/ai-usage";
 import { aiMonthlyRequestLimit } from "@/lib/billing";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { getMetaConfig } from "@/lib/meta-ai";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -61,18 +62,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Conversation messages are invalid or too large." }, { status: 400 });
   }
 
-  const apiKey = process.env.SEMANTIC_JUDGE_API_KEY?.trim();
-  if (!apiKey) {
+  const metaConfig = getMetaConfig();
+  if (!metaConfig.configured) {
     return NextResponse.json(
-      { error: "Baseten is not configured. Set SEMANTIC_JUDGE_API_KEY on the server." },
+      { error: "Meta AI is not configured. Set MODEL_API_KEY or SEMANTIC_JUDGE_API_KEY on the server." },
       { status: 503 }
     );
   }
 
-  const baseUrl = (
-    process.env.SEMANTIC_JUDGE_BASE_URL?.trim() || "https://inference.baseten.co/v1"
-  ).replace(/\/+$/, "");
-  const model = process.env.SEMANTIC_JUDGE_MODEL?.trim() || "meta-models/muse-spark-open-1026";
+  const { apiKey, baseUrl, model } = metaConfig;
 
   const { data: settings, error: settingsError } = await supabase
     .from("user_settings")
@@ -136,22 +134,22 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       return NextResponse.json(
-        { error: "Baseten took too long to respond. Please try again.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
+        {         error: "Meta AI took too long to respond. Please try again.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
         { status: 504 }
       );
     }
-    console.error("MockAgent assistant: Baseten request failed", error);
+    console.error("MockAgent assistant: Meta model request failed", error);
     return NextResponse.json(
-      { error: "Could not connect to Baseten. Please try again.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
+      { error: "Could not connect to the configured Meta model provider. Please try again.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
       { status: 502 }
     );
   }
 
   if (!upstreamResponse.ok) {
-    console.error("MockAgent assistant: Baseten returned HTTP", upstreamResponse.status);
+    console.error("MockAgent assistant: Meta model provider returned HTTP", upstreamResponse.status);
     return NextResponse.json(
       {
-        error: "Baseten could not complete the request. Check the server configuration and try again.",
+        error: "Meta AI could not complete the request. Check the server configuration and try again.",
         aiUsage: { used: budget.used, limit: aiRequestLimit },
       },
       { status: 502 }
@@ -162,16 +160,16 @@ export async function POST(request: NextRequest) {
   try {
     upstreamBody = await upstreamResponse.json();
   } catch (error) {
-    console.error("MockAgent assistant: Baseten returned invalid JSON", error);
+    console.error("MockAgent assistant: Meta model provider returned invalid JSON", error);
     return NextResponse.json(
-      { error: "Baseten returned an invalid response.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
+      { error: "Meta AI returned an invalid response.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
       { status: 502 }
     );
   }
 
   if (!upstreamBody || typeof upstreamBody !== "object") {
     return NextResponse.json(
-      { error: "Baseten returned an invalid response.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
+      { error: "Meta AI returned an invalid response.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
       { status: 502 }
     );
   }
@@ -188,7 +186,7 @@ export async function POST(request: NextRequest) {
 
   if (typeof content !== "string" || !content.trim()) {
     return NextResponse.json(
-      { error: "Baseten returned an empty response.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
+      { error: "Meta AI returned an empty response.", aiUsage: { used: budget.used, limit: aiRequestLimit } },
       { status: 502 }
     );
   }

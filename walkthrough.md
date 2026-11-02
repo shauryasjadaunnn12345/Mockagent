@@ -153,6 +153,19 @@ walkthrough.
 7. **If time permits, submit final text.** Run the configured answer checks
    using the same run ID and show the separate literal and semantic results.
 
+### Built-in Meta coverage demo
+
+The **Run demo** button in Regression Tests is a deterministic sandbox: it
+shows a flawed delayed-order agent attempt a refund while the response
+sequence is `pending → ready`, asks the configured Meta model to explain the
+failure and draft regression cases, then waits for explicit review before
+adding them to a browser-only demo suite. Confirming the draft reruns the
+corrected sample flow, which rechecks status, checks inventory, and refunds
+only when ready. The before/after coverage panel is computed from these fixed
+tool traces. No workspace tools, regression records, real refunds, or external
+business-service calls are created; only the Meta explanation and draft use
+one workspace AI request and its normal quota.
+
 ## 4. Guided setup
 
 ### Prerequisites
@@ -160,7 +173,8 @@ walkthrough.
 - Node.js compatible with the project's Next.js version.
 - A Supabase project for authentication and persistent data.
 - Optional integrations: Upstash Redis for shared gateway rate limits,
-  a compatible LLM endpoint for Semantic QA, and Dodo Payments for paid plans.
+  the configured Meta AI-compatible endpoint for tool generation, the
+  assistant, and Semantic QA, and Dodo Payments for paid plans.
 
 ### Start the web app
 
@@ -201,8 +215,9 @@ owner membership by a database trigger.
 | `NEXT_PUBLIC_APP_URL` | Public origin used to display endpoint URLs and construct auth/billing redirects. |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Shared gateway limits. Production requests fail closed with `503` when this is not configured or available. |
 | `CRON_SECRET` | Bearer secret for the scheduled expired-log cleanup endpoint. |
-| `SEMANTIC_JUDGE_BASE_URL`, `SEMANTIC_JUDGE_API_KEY`, `SEMANTIC_JUDGE_MODEL` | Optional OpenAI-compatible Semantic QA judge configuration. For Baseten hackathon credits use `https://inference.baseten.co/v1` and `meta-models/muse-spark-open-1026`; keep the key server-side. |
-| `DODO_PAYMENTS_API_KEY`, `DODO_PAYMENTS_WEBHOOK_KEY`, `DODO_PAYMENTS_ENVIRONMENT`, `DODO_PAYMENTS_SOLO_PRODUCT_ID`, `DODO_PAYMENTS_TEAM_PRODUCT_ID` | Optional checkout, subscription webhook, and plan integration. |
+| `MODEL_API_KEY`, `META_MODEL`, `META_MODEL_API_BASE_URL` | First-party Meta Model API configuration. Defaults to `https://api.meta.ai/v1` and `muse-spark-1.3`; the Playground loads available Muse Spark/Wonder models from Meta's `/models` API. With this provider, the Playground uses Responses API function calling and replays encrypted reasoning between turns with `store: false`. Keep the key server-side. |
+| `SEMANTIC_JUDGE_BASE_URL`, `SEMANTIC_JUDGE_API_KEY`, `SEMANTIC_JUDGE_MODEL` | Backwards-compatible OpenAI-compatible provider configuration for Baseten-hosted Muse Spark Open, used when `MODEL_API_KEY` is not set. Default endpoint is `https://inference.baseten.co/v1` and default model `meta-models/muse-spark-open-1026`. |
+| `DODO_PAYMENTS_API_KEY`, `DODO_PAYMENTS_WEBHOOK_KEY`, `DODO_PAYMENTS_ENVIRONMENT`, `DODO_PAYMENTS_SOLO_PRODUCT_ID`, `DODO_PAYMENTS_TEAM_PRODUCT_ID` | Optional checkout, subscription webhook, and plan integration. Checkout is usable only when the deployment's Dodo credentials and plan product IDs are configured and the provider returns a session; live availability is deployment-specific. |
 
 The local development gateway can run without Upstash configuration. The
 application still needs Supabase credentials to create users, tools, and logs.
@@ -597,10 +612,12 @@ its data.
 | **Workspace** | Switch or create workspaces, view members, invite by email, and remove eligible members. |
 | **Plan and billing** | Current plan/status and limits, paid-plan checkout, and the Dodo billing portal. Active and past-due subscriptions receive paid limits; other subscription states use Free limits, and an existing subscription must be managed before starting another checkout. |
 | **Usage analytics** | Up to 30 daily usage rows, a recent-call chart, average latency, violations, and manager-controlled log retention. |
-| **Agent Playground** | Run a prompt through the configured model with selected active, open-access mock tools; inspect the answer and tool calls. Each mock call is logged and counts toward usage limits. |
-| **Regression Tests** | Save a prompt, selected tools, exact tool-call sequence, required answer phrases, and JSON response assertions (dot paths with equality, containment, existence, or numeric checks); run one test or a confirmed sequential batch, track progress and detailed expected/actual results, inspect bounded traces, and compare with the previous run. Analytics summarize pass rates, seven-day outcomes, trend windows, common failed checks, per-test streaks/reliability, model results, and average tool calls from the latest 100 loaded runs. |
-| **MockAgent Assistant** | Ask the Baseten-powered assistant for guidance on tool contracts and tests. It does not automatically access workspace data. |
-| **Mock Tools** | Create and edit tool definitions, copy endpoint URLs, enable/disable tools, require/remove key protection, or delete tools. Configuration edits preserve the endpoint ID and snapshot the previous definition for revision history and restore. Deleting a tool also deletes its associated logs and revisions. |
+| **Agent Playground** | Run a prompt through a selected Meta Muse model and selected active mock tools; inspect the answer and tool calls. With first-party Meta Model API configuration, uses the Responses API and encrypted reasoning replay across tool turns; calls go through the standard gateway and count toward usage limits. |
+| **Meta AI Tool Studio** | Generate a tool draft from a natural-language request, validate its JSON Schema and scenario matchers, edit the draft, and create the tool through the normal server-side validation and plan-limit checks. |
+| **Regression Tests** | Save a prompt, selected tools, exact tool-call sequence, required answer phrases, and JSON response assertions (dot paths with equality, containment, existence, numeric checks, or JSON Schema validation); assertions can target the first call or every call to the chosen tool. Run one test or a confirmed sequential batch, track progress and detailed expected/actual results, inspect bounded traces, and compare with the previous run. Coverage summarizes observed argument fields, enum values, scenario matches, and response steps from the loaded run history. Meta-powered Auto-improve reruns a baseline, targets uncovered points for up to 2–3 rounds, and displays measured per-round coverage deltas; each generated case is an editable draft and is saved/run only after explicit confirmation. Failed runs support one-click Meta explanation plus follow-up drafting, with a separate confirmation to save the edited test. Run traces show model/provider and whether encrypted Responses API reasoning was replayed, never its contents. Versioned JSON import/export maps tool names to active tools in the destination workspace. Analytics summarize pass rates, seven-day outcomes, trend windows, common failed checks, per-test streaks/reliability, model results, and average tool calls from the latest 100 loaded runs. |
+| **Built-in demo** | Run a deterministic sandboxed delayed-order flow using lookup_order, issue_refund, and check_inventory fixtures. Meta explains the deliberately flawed agent and drafts a follow-up case; the user reviews and confirms before the local corrected rerun. No workspace regression record or real refund is created. |
+| **MockAgent Assistant** | Ask the configured Meta Muse-powered assistant for guidance on tool contracts and tests. It does not automatically access workspace data. |
+| **Mock Tools** | Create and edit tool definitions with a guided scenario editor and local input/response-sequence preview, copy endpoint URLs, enable/disable tools, require/remove key protection, or delete tools. Configuration edits preserve the endpoint ID and snapshot the previous definition for revision comparison and restore. Deleting a tool also deletes its associated logs and revisions. |
 | **API Keys** | Owners/admins can create and revoke workspace keys and set a per-key monthly limit. The full key is shown once. |
 | **Execution Logs** | Recent calls, input, saved response, status, scenario/step, run ID, latency, and replay comparison. New log inserts appear through Supabase Realtime. |
 | **Run & Final-Answer Checks** | Recent submitted answers and literal/semantic results, updated through Supabase Realtime. |
@@ -610,17 +627,41 @@ Before using tool revision history on an existing Supabase project, re-run
 read policy, and a trigger that retains up to 50 previous configurations for
 each tool. A restore is saved as a new revision, so it can also be undone.
 
-The Agent Playground runs at most five mock calls per run and supports up to
-eight selected tools. Protected tools are excluded for now. Prompts and tool
-outputs are sent to the configured model provider; each mock call still passes
-through the public gateway and is subject to its rate limits and workspace
-usage quota.
+The Agent Playground supports active tools with and without API-key protection.
+For protected tools, enter the key for that run; the key is sent only to the
+matching gateway call and is neither stored with the run nor sent to the model.
+Workspace plans allow up to 250 tools; combined tool schemas are limited to
+32 KB per model request. Runs continue until the request deadline or shared
+workspace AI quota/rate limit is reached. Prompts and tool outputs are sent to
+the configured model provider, and each mock call passes through the public
+gateway.
 
-Regression tests use those same Playground limits and tool restrictions. A
-test passes only if its configured exact sequence/answer phrases pass and every
-tool call succeeds with HTTP 2xx. The latest 50 runs per test are retained.
-Run the latest [schema.sql](./schema.sql) before creating suites; saved tests
-and their results are workspace-scoped.
+Regression tests use the same tool support and can add semantic answer criteria
+to judge answers against successful tool evidence. The judge is fallible and
+should be reviewed alongside literal checks and traces. Each test can contain
+up to 20 prompt cases; the latest 50 case runs per test are retained. Run the
+latest [schema.sql](./schema.sql) before creating suites; saved tests and their
+results are workspace-scoped.
+
+The regression editor can ask Meta AI to draft prompt cases from selected tool
+schemas, mock responses, and scenarios. From a failed run, it can also draft
+follow-up prompts using failed checks and a bounded trace. Review and edit the
+generated cases before saving. **Target coverage gaps** prioritizes uncovered
+arguments, enum values, scenarios, and response-sequence steps from up to 100
+recent workspace regression traces. Those targets are suggestions; rerun the
+cases to verify actual coverage. **Review contract risks** asks Meta to review
+selected schemas, responses, scenarios, and coverage gaps. Findings include a
+severity, a JSON Pointer checked against the selected contract, a potential
+risk, and a suggested prompt that can be added as an editable draft. The review
+is advisory, does not modify tools, and does not prove a risk. Failed saved runs
+can also be sent to Meta AI for diagnosis linked to failed checks and a bounded
+trace.
+
+For automation, [`scripts/mockagent-ci.mjs`](./scripts/mockagent-ci.mjs) uses a
+workspace API key to run saved regression cases and exits nonzero on failures.
+It consumes normal workspace AI and mock-call quotas. See
+[`README.md`](./README.md#run-saved-tests-in-ci) for secret setup and the
+manual GitHub Actions example.
 
 ## 11. Workspaces, limits, and billing
 
@@ -771,11 +812,16 @@ app/actions/billing.ts                Dodo checkout and billing portal actions
 app/api/v1/mock/[toolId]/route.ts     Public tool GET/POST gateway
 app/api/v1/mock/[toolId]/final-answer/route.ts
                                      Final-answer and run QA endpoint
+app/api/regression/generate/route.ts Meta AI regression-case generation
+app/api/regression/explain/route.ts  Evidence-linked failed-run explanations
+app/api/ci/suites/route.ts           Workspace-key-authenticated CI suite list
 app/api/billing/webhook/route.ts      Signed Dodo subscription webhook
 app/api/cron/cleanup-logs/route.ts    Retention cleanup endpoint
 lib/                                 Validation, scenarios, guards, integrations
+scripts/mockagent-ci.mjs             CI runner for saved regression suites
 packages/mockagent-js/                JavaScript/TypeScript SDK source and tests
 packages/mockagent-python/            Dependency-free Python SDK source and tests
+examples/delayed-order-refund/        SDK-backed buggy/fixed agent and reproduction guide
 types/database.ts                    Typed Supabase database model
 vercel.json                          Daily cleanup schedule (03:00 UTC)
 ```

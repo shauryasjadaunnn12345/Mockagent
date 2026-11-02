@@ -1,4 +1,9 @@
 import type { Json } from "@/types/database";
+import {
+  parseSemanticCriteria,
+  type SemanticEvaluation,
+} from "./semantic-evaluation.ts";
+import { validateAgainstSchema, validateSchemaDefinition } from "./validators.ts";
 
 export const MAX_REGRESSION_SUITE_NAME_LENGTH = 80;
 export const MAX_REGRESSION_EXPECTED_PHRASES = 20;
@@ -8,17 +13,25 @@ export const MAX_REGRESSION_TEST_CASES = 20;
 export const MAX_REGRESSION_TEST_CASE_PROMPT_LENGTH = 5000;
 export const MAX_REGRESSION_TEST_CASES_TOTAL_LENGTH = 20000;
 
-export type ResponseAssertionOperator = "equals" | "contains" | "exists" | "greater_than" | "less_than";
+export type ResponseAssertionOperator =
+  | "equals"
+  | "contains"
+  | "exists"
+  | "greater_than"
+  | "less_than"
+  | "matches_schema";
+export type ResponseAssertionScope = "first" | "all";
 
 export interface RegressionResponseAssertion {
   toolId: string;
   path: string;
   operator: ResponseAssertionOperator;
+  scope: ResponseAssertionScope;
   expected?: Json;
 }
 
 export function isResponseAssertionOperator(value: string): value is ResponseAssertionOperator {
-  return ["equals", "contains", "exists", "greater_than", "less_than"].includes(value);
+  return ["equals", "contains", "exists", "greater_than", "less_than", "matches_schema"].includes(value);
 }
 
 export interface RegressionSuiteInput {
@@ -29,6 +42,7 @@ export interface RegressionSuiteInput {
   expectedToolIds: string[] | null;
   requiredAnswerText: string[];
   responseAssertions: RegressionResponseAssertion[];
+  semanticCriteria: string | null;
 }
 
 export interface RegressionTestCase {
@@ -46,6 +60,24 @@ export interface RegressionCheck {
 export interface RegressionEvaluation {
   passed: boolean;
   checks: RegressionCheck[];
+}
+
+export function withSemanticEvaluation(
+  evaluation: RegressionEvaluation,
+  criteria: string,
+  semanticEvaluation: SemanticEvaluation
+): RegressionEvaluation {
+  const semanticCheck: RegressionCheck = {
+    name: "Semantic answer support",
+    passed: semanticEvaluation.status === "passed",
+    expected: criteria,
+    actual: `${semanticEvaluation.status}: ${semanticEvaluation.rationale}`,
+  };
+  const checks = [...evaluation.checks, semanticCheck];
+  return {
+    checks,
+    passed: checks.every((check) => check.passed),
+  };
 }
 
 export function parseRegressionTestCases(
@@ -147,8 +179,12 @@ export function parseRegressionResponseAssertions(
   return rawAssertions.map((assertion): RegressionResponseAssertion => {
     if (!isRecord(assertion)) throw new Error("Tool-response assertion must be an object.");
     const { toolId, path, operator, expected } = assertion;
+    const scope = assertion.scope ?? "first";
     if (typeof toolId !== "string" || !toolIds.includes(toolId)) {
       throw new Error("Tool-response assertions must reference a selected tool.");
+    }
+    if (scope !== "first" && scope !== "all") {
+      throw new Error("Choose whether the response assertion applies to the first call or all calls.");
     }
     if (
       typeof path !== "string" ||
@@ -171,6 +207,13 @@ export function parseRegressionResponseAssertions(
       }
       expectedValue = expected;
     }
+    if (operator === "matches_schema") {
+      if (!expectedValue || typeof expectedValue !== "object" || Array.isArray(expectedValue)) {
+        throw new Error("Schema assertions require a JSON Schema object as the expected value.");
+      }
+      const schemaError = validateSchemaDefinition(expectedValue);
+      if (schemaError) throw new Error(`Response assertion schema is invalid: ${schemaError}`);
+    }
     if ((operator === "greater_than" || operator === "less_than") && typeof expectedValue !== "number") {
       throw new Error("Numeric assertions require a JSON number as the expected value.");
     }
@@ -178,6 +221,7 @@ export function parseRegressionResponseAssertions(
       toolId,
       path,
       operator,
+      scope,
       ...(operator === "exists" ? {} : { expected: expectedValue }),
     };
   });
@@ -202,10 +246,10 @@ export function parseRegressionSuiteInput(value: unknown): RegressionSuiteInput 
   if (
     !Array.isArray(toolIds) ||
     toolIds.length === 0 ||
-    toolIds.length > 8 ||
+    toolIds.length > 250 ||
     !toolIds.every((toolId) => typeof toolId === "string" && toolId.length > 0 && toolId.length <= 64)
   ) {
-    throw new Error("Select between 1 and 8 valid tools.");
+    throw new Error("Select between 1 and 250 valid tools.");
   }
   if (new Set(toolIds).size !== toolIds.length) {
     throw new Error("Selected tools must be unique.");
@@ -222,9 +266,6 @@ export function parseRegressionSuiteInput(value: unknown): RegressionSuiteInput 
       throw new Error("Expected tool sequence is invalid.");
     }
     expectedToolIds = value.expectedToolIds;
-    if (new Set(expectedToolIds).size !== expectedToolIds.length) {
-      throw new Error("Expected tool sequence cannot repeat a tool.");
-    }
     if (!expectedToolIds.every((toolId) => toolIds.includes(toolId))) {
       throw new Error("Expected tool sequence must use only selected tools.");
     }
@@ -248,12 +289,18 @@ export function parseRegressionSuiteInput(value: unknown): RegressionSuiteInput 
   const requiredAnswerText = rawPhrases.map((phrase) => phrase.trim());
 
   const responseAssertions = parseRegressionResponseAssertions(value.responseAssertions, toolIds);
+  const semanticCriteria = parseSemanticCriteria(value.semanticCriteria);
 
-  if (expectedToolIds === null && requiredAnswerText.length === 0 && responseAssertions.length === 0) {
-    throw new Error("Add a tool sequence, a tool-response assertion, or at least one required answer phrase.");
+  if (
+    expectedToolIds === null &&
+    requiredAnswerText.length === 0 &&
+    responseAssertions.length === 0 &&
+    semanticCriteria === null
+  ) {
+    throw new Error("Add a tool sequence, a tool-response assertion, required answer phrase, or semantic QA criteria.");
   }
 
-  return { name, prompt, testCases, toolIds, expectedToolIds, requiredAnswerText, responseAssertions };
+  return { name, prompt, testCases, toolIds, expectedToolIds, requiredAnswerText, responseAssertions, semanticCriteria };
 }
 
 export function evaluateRegressionTest(
@@ -297,38 +344,58 @@ export function evaluateRegressionTest(
   }
 
   for (const assertion of responseAssertions) {
-    const matchingCall = actualCalls?.find((call) => call.toolId === assertion.toolId);
-    const pathResult = matchingCall ? readPath(matchingCall.response, assertion.path) : { exists: false };
+    const matchingCalls = actualCalls?.filter((call) => call.toolId === assertion.toolId) ?? [];
+    const callsToCheck = assertion.scope === "all" ? matchingCalls : matchingCalls.slice(0, 1);
     const expectedDescription = assertion.operator === "exists"
       ? "field exists"
+      : assertion.operator === "matches_schema"
+        ? `matches JSON Schema ${JSON.stringify(assertion.expected)}`
       : `${assertion.operator} ${JSON.stringify(assertion.expected)}`;
-    const passed = (() => {
-      if (assertion.operator === "exists") return pathResult.exists;
-      if (!pathResult.exists) return false;
-      if (assertion.operator === "equals") {
-        return jsonEqual(pathResult.value, assertion.expected);
-      }
-      if (assertion.operator === "contains") {
-        if (typeof pathResult.value === "string" && typeof assertion.expected === "string") {
-          return pathResult.value.includes(assertion.expected);
+    const results = callsToCheck.map((call) => {
+      const pathResult = readPath(call.response, assertion.path);
+      const passed = (() => {
+        if (assertion.operator === "exists") return pathResult.exists;
+        if (!pathResult.exists) return false;
+        if (assertion.operator === "matches_schema") {
+          return validateAgainstSchema(
+            assertion.expected as Record<string, unknown>,
+            pathResult.value
+          ).valid;
         }
-        return Array.isArray(pathResult.value) && pathResult.value.some(
-          (item) => jsonEqual(item, assertion.expected)
-        );
-      }
-      if (typeof pathResult.value !== "number" || typeof assertion.expected !== "number") return false;
-      return assertion.operator === "greater_than"
-        ? pathResult.value > assertion.expected
-        : pathResult.value < assertion.expected;
-    })();
+        if (assertion.operator === "equals") {
+          return jsonEqual(pathResult.value, assertion.expected);
+        }
+        if (assertion.operator === "contains") {
+          if (typeof pathResult.value === "string" && typeof assertion.expected === "string") {
+            return pathResult.value.includes(assertion.expected);
+          }
+          return Array.isArray(pathResult.value) && pathResult.value.some(
+            (item) => jsonEqual(item, assertion.expected)
+          );
+        }
+        if (typeof pathResult.value !== "number" || typeof assertion.expected !== "number") return false;
+        return assertion.operator === "greater_than"
+          ? pathResult.value > assertion.expected
+          : pathResult.value < assertion.expected;
+      })();
+      return {
+        passed,
+        actual: pathResult.exists
+          ? describeAssertionValue(pathResult.value)
+          : "field not found",
+      };
+    });
+    const passed = results.length > 0 && results.every((result) => result.passed);
 
     checks.push({
-      name: `${matchingCall?.toolName ?? assertion.toolId} response ${assertion.path} ${assertion.operator}`,
+      name: `${matchingCalls[0]?.toolName ?? assertion.toolId} response ${assertion.path} ${assertion.operator}${assertion.scope === "all" ? " on all calls" : ""}`,
       passed,
       expected: expectedDescription,
-      actual: pathResult.exists
-        ? describeAssertionValue(pathResult.value)
-        : matchingCall ? "field not found" : "tool not called",
+      actual: results.length
+        ? assertion.scope === "all"
+          ? results.map((result, index) => `Call ${index + 1}: ${result.actual}`)
+          : results[0].actual
+        : "tool not called",
     });
   }
 

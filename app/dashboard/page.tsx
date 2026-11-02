@@ -13,6 +13,9 @@ import { AnalyticsPanel } from "@/app/dashboard/components/AnalyticsPanel";
 import { WorkspacePanel, type WorkspaceMemberOption, type WorkspaceOption } from "@/app/dashboard/components/WorkspacePanel";
 import { BillingPanel } from "@/app/dashboard/components/BillingPanel";
 import { BasetenAssistant } from "@/app/dashboard/components/BasetenAssistant";
+import { AdvancedPanel } from "@/components/AdvancedPanel";
+import { WorkspaceAnalytics } from "@/components/WorkspaceAnalytics";
+import { getMetaConfig } from "@/lib/meta-ai";
 import { AgentPlayground } from "@/app/dashboard/components/AgentPlayground";
 import { RegressionSuitesPanel } from "@/app/dashboard/components/RegressionSuitesPanel";
 import { effectiveWorkspacePlan, PLAN_LIMITS } from "@/lib/billing";
@@ -148,7 +151,7 @@ export default async function DashboardPage() {
       supabase.rpc("list_workspace_members", { target_workspace_id: activeWorkspaceId }),
     supabase
       .from("agent_test_suites")
-      .select("id,name,prompt,test_cases,tool_ids,expected_tool_ids,required_answer_text,response_assertions,created_at")
+      .select("id,name,prompt,test_cases,tool_ids,expected_tool_ids,required_answer_text,response_assertions,semantic_criteria,created_at")
       .eq("workspace_id", activeWorkspaceId)
       .order("created_at", { ascending: false })
       .limit(50),
@@ -170,6 +173,7 @@ export default async function DashboardPage() {
       }));
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const metaConfigured = getMetaConfig().configured;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 px-4 py-10">
@@ -219,9 +223,10 @@ export default async function DashboardPage() {
       />
 
       <AgentPlayground
-        key={activeWorkspaceId}
+        key={`playground-${activeWorkspaceId}`}
         monthlyAIRequestsUsed={monthlyAIRequestsUsed}
         aiMonthlyRequestLimit={PLAN_LIMITS[effectivePlan].aiMonthlyRequests}
+        metaConfigured={metaConfigured}
         tools={(tools ?? []).map((tool) => ({
           id: tool.id,
           name: tool.name,
@@ -238,6 +243,8 @@ export default async function DashboardPage() {
           name: tool.name,
           is_active: tool.is_active,
           require_api_key: tool.require_api_key,
+          json_schema: tool.json_schema,
+          scenarios: tool.scenarios,
         }))}
         suites={regressionSuiteOptions}
         workspaceId={activeWorkspaceId}
@@ -247,10 +254,12 @@ export default async function DashboardPage() {
       />
 
       <BasetenAssistant
-        key={activeWorkspaceId}
+        key={`assistant-${activeWorkspaceId}`}
         monthlyAIRequestsUsed={monthlyAIRequestsUsed}
         aiMonthlyRequestLimit={PLAN_LIMITS[effectivePlan].aiMonthlyRequests}
       />
+      <AdvancedPanel workspaceId={activeWorkspaceId} />
+      <WorkspaceAnalytics workspaceId={activeWorkspaceId} />
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">

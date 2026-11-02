@@ -165,7 +165,7 @@ export function BillingPanel({
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
                   {monthlyAIRequestsUsed >= PLAN_LIMITS[plan].aiMonthlyRequests
-                    ? "Monthly AI request limit reached; Baseten requests are blocked until the next UTC month or a plan change."
+                    ? "Monthly AI request limit reached; model requests are blocked until the next UTC month or a plan change."
                     : `${(PLAN_LIMITS[plan].aiMonthlyRequests - monthlyAIRequestsUsed).toLocaleString()} AI requests remaining this UTC month. Playground runs can use multiple requests.`}
                 </p>
               </>

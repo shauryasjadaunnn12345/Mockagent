@@ -1,0 +1,27 @@
+name: MockAgent regression tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite_ids:
+        description: Optional comma-separated saved suite IDs (blank runs all workspace suites)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run saved MockAgent regression suites
+        env:
+          MOCKAGENT_BASE_URL: ${{ secrets.MOCKAGENT_BASE_URL }}
+          MOCKAGENT_API_KEY: ${{ secrets.MOCKAGENT_API_KEY }}
+          MOCKAGENT_SUITE_IDS: ${{ inputs.suite_ids }}
+        run: node scripts/mockagent-ci.mjs

@@ -1,4 +1,5 @@
 import type { Json } from "@/types/database";
+import { getMetaConfig } from "./meta-ai.ts";
 
 export interface SemanticCallEvidence {
   created_at: string;
@@ -11,6 +12,10 @@ export type SemanticEvaluation =
   | { status: "not_configured"; passed: null; rationale: string }
   | { status: "passed" | "failed"; passed: boolean; rationale: string }
   | { status: "error"; passed: null; rationale: string };
+
+export function getMetaJudgeInfo() {
+  return getMetaConfig();
+}
 
 export function parseSemanticCriteria(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -36,9 +41,8 @@ export async function evaluateSemanticAnswer(
     return { status: "error", passed: null, rationale: "No successful tool outputs are available as evidence." };
   }
 
-  const apiKey = process.env.SEMANTIC_JUDGE_API_KEY?.trim();
-  const model = process.env.SEMANTIC_JUDGE_MODEL?.trim();
-  if (!apiKey || !model) {
+  const { apiKey, model, baseUrl, configured } = getMetaConfig();
+  if (!configured) {
     return {
       status: "error",
       passed: null,
@@ -46,8 +50,6 @@ export async function evaluateSemanticAnswer(
     };
   }
 
-  const baseUrl = (process.env.SEMANTIC_JUDGE_BASE_URL?.trim() || "https://api.openai.com/v1")
-    .replace(/\/+$/, "");
   const boundedEvidence = JSON.stringify(evidence).slice(0, 30000);
 
   try {

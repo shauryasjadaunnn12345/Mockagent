@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { createTool } from "@/app/actions/tools";
 import { Plus } from "lucide-react";
+import { ScenarioEditor } from "@/app/dashboard/components/ScenarioEditor";
 
 const DEFAULT_SCHEMA = `{
   "type": "object",
@@ -67,33 +68,40 @@ export function CreateToolDialog() {
 
   async function handleSubmit(formData: FormData) {
     setError(null);
-    const result = await createTool({
-      name: String(formData.get("name") ?? ""),
-      description: String(formData.get("description") ?? ""),
-      jsonSchema: String(formData.get("jsonSchema") ?? ""),
-      mockResponse: String(formData.get("mockResponse") ?? ""),
-      scenarios: String(formData.get("scenarios") ?? "[]"),
-      finalAnswerAssertions: String(formData.get("finalAnswerAssertions") ?? "[]"),
-      semanticCriteria: String(formData.get("semanticCriteria") ?? ""),
-      requireApiKey: formData.get("requireApiKey") === "on",
-    });
+    try {
+      const result = await createTool({
+        name: String(formData.get("name") ?? ""),
+        description: String(formData.get("description") ?? ""),
+        jsonSchema: String(formData.get("jsonSchema") ?? ""),
+        mockResponse: String(formData.get("mockResponse") ?? ""),
+        scenarios: String(formData.get("scenarios") ?? "[]"),
+        finalAnswerAssertions: String(formData.get("finalAnswerAssertions") ?? "[]"),
+        semanticCriteria: String(formData.get("semanticCriteria") ?? ""),
+        requireApiKey: formData.get("requireApiKey") === "on",
+      });
 
-    if (!result.success) {
-      setError(result.error ?? "Something went wrong.");
-      return;
+      if (!result.success) {
+        setError(result.error ?? "Something went wrong.");
+        return;
+      }
+      setOpen(false);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Could not create the mock tool.");
     }
-    setOpen(false);
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      setOpen(nextOpen);
+      if (nextOpen) setError(null);
+    }}>
       <DialogTrigger asChild>
         <Button>
           <Plus className="h-4 w-4" />
           New Mock Tool
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create a Mock Tool</DialogTitle>
           <DialogDescription>
@@ -107,7 +115,7 @@ export function CreateToolDialog() {
           className="space-y-4"
         >
           {error && (
-            <p className="rounded-md bg-red-50 p-2 text-sm text-red-600">{error}</p>
+            <p role="alert" className="rounded-md bg-red-50 p-2 text-sm text-red-600">{error}</p>
           )}
 
           <div className="space-y-1.5">
@@ -146,19 +154,7 @@ export function CreateToolDialog() {
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="scenarios">Conditional response scenarios</Label>
-            <Textarea
-              id="scenarios"
-              name="scenarios"
-              defaultValue={DEFAULT_SCENARIOS}
-              rows={12}
-              required
-            />
-            <p className="text-xs text-slate-500">
-              Use a single <code>response</code>, or a <code>responses</code> array for a sequence. For sequences, use a new <code>x-mockagent-run-id</code> per test run and repeat it across calls; the last response repeats after the sequence ends.
-            </p>
-          </div>
+          <ScenarioEditor name="scenarios" idPrefix="new-tool-scenarios" value={JSON.parse(DEFAULT_SCENARIOS)} />
 
           <div className="space-y-1.5">
             <Label htmlFor="finalAnswerAssertions">Run &amp; final-answer assertions</Label>

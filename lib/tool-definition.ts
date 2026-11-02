@@ -24,6 +24,14 @@ export interface ToolConfiguration {
   semantic_criteria: string | null;
 }
 
+export interface GeneratedToolDraft {
+  name: string;
+  description: string;
+  json_schema: Json;
+  mock_response: Json;
+  scenarios: Json;
+}
+
 function parseJsonObject(raw: string, fieldLabel: string): Record<string, unknown> {
   let value: unknown;
   try {
@@ -35,6 +43,45 @@ function parseJsonObject(raw: string, fieldLabel: string): Record<string, unknow
     throw new Error(`${fieldLabel} must be a JSON object.`);
   }
   return value as Record<string, unknown>;
+}
+
+export function parseGeneratedToolDraft(value: unknown): GeneratedToolDraft {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Generated tool draft must be a JSON object.");
+  }
+
+  const draft = value as Record<string, unknown>;
+  if (
+    typeof draft.name !== "string" ||
+    typeof draft.description !== "string" ||
+    !draft.json_schema ||
+    typeof draft.json_schema !== "object" ||
+    Array.isArray(draft.json_schema) ||
+    !draft.mock_response ||
+    typeof draft.mock_response !== "object" ||
+    Array.isArray(draft.mock_response) ||
+    !Array.isArray(draft.scenarios)
+  ) {
+    throw new Error("Generated tool draft is missing a name, description, schema, response, or scenarios.");
+  }
+
+  const configuration = parseToolConfiguration({
+    name: draft.name,
+    description: draft.description,
+    jsonSchema: JSON.stringify(draft.json_schema),
+    mockResponse: JSON.stringify(draft.mock_response),
+    scenarios: JSON.stringify(draft.scenarios),
+    finalAnswerAssertions: "[]",
+    semanticCriteria: "",
+  });
+
+  return {
+    name: configuration.name,
+    description: configuration.description ?? "",
+    json_schema: configuration.json_schema,
+    mock_response: configuration.mock_response,
+    scenarios: configuration.scenarios,
+  };
 }
 
 export function parseToolConfiguration(

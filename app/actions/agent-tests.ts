@@ -106,7 +106,7 @@ export async function createRegressionSuite(input: unknown) {
 
   const { data: tools, error: toolsError } = await supabase
     .from("tools")
-    .select("id,is_active,require_api_key")
+    .select("id,is_active")
     .eq("workspace_id", settings.current_workspace_id)
     .in("id", suite.toolIds);
   if (toolsError) {
@@ -116,15 +116,15 @@ export async function createRegressionSuite(input: unknown) {
   if (tools?.length !== suite.toolIds.length) {
     return { success: false as const, error: "Selected tools must belong to the active workspace." };
   }
-  const unavailable = tools.find((tool) => !tool.is_active || tool.require_api_key);
+  const unavailable = tools.find((tool) => !tool.is_active);
   if (unavailable) {
     return {
       success: false as const,
-      error: "Regression tests currently require active tools without API-key protection.",
+      error: "Regression tests can only use active tools.",
     };
   }
 
-  const { error } = await supabase.from("agent_test_suites").insert({
+  const { data: savedSuite, error } = await supabase.from("agent_test_suites").insert({
     workspace_id: settings.current_workspace_id,
     created_by: user.id,
     name: suite.name,
@@ -134,9 +134,10 @@ export async function createRegressionSuite(input: unknown) {
     expected_tool_ids: suite.expectedToolIds,
     required_answer_text: suite.requiredAnswerText,
     response_assertions: JSON.parse(JSON.stringify(suite.responseAssertions)) as Json,
-  });
-  if (error) {
-    console.error("MockAgent: failed to save regression test", error.message);
+    semantic_criteria: suite.semanticCriteria,
+  }).select("id").single();
+  if (error || !savedSuite) {
+    console.error("MockAgent: failed to save regression test", error?.message ?? "No created suite row was returned.");
     return {
       success: false as const,
       error: "Could not save regression test. Ensure the latest schema.sql has been run.",
@@ -144,7 +145,7 @@ export async function createRegressionSuite(input: unknown) {
   }
 
   revalidatePath("/dashboard");
-  return { success: true as const };
+  return { success: true as const, suiteId: savedSuite.id };
 }
 
 export async function deleteRegressionSuite(suiteId: string) {

@@ -12,6 +12,7 @@ import {
   KeyRound,
   Play,
   ShieldCheck,
+  Sparkles,
   Waypoints,
   Workflow,
 } from "lucide-react";
@@ -46,6 +47,82 @@ const capabilities = [
     title: "Protect the endpoint",
     text: "Issue revocable bearer keys, require them per tool, and enforce monthly usage limits at the gateway.",
     detail: "API KEY CONTROLS",
+  },
+  {
+    number: "05",
+    icon: Sparkles,
+    title: "Draft tools with Muse Spark",
+    text: "Turn a plain-language requirement into an editable tool contract, mock response, and edge-case scenarios. Validate before saving.",
+    detail: "META AI TOOL STUDIO",
+  },
+];
+
+const featureGroups = [
+  {
+    icon: Braces,
+    title: "Mock tool contracts",
+    description: "Control what an agent can call and exactly what each call returns.",
+    features: [
+      { name: "HTTP mock endpoints", text: "Give every tool a stable endpoint callable from an agent or test harness." },
+      { name: "JSON Schema validation", text: "Check required fields, types, enums, and unexpected properties with actionable errors." },
+      { name: "Scenarios and sequences", text: "Match inputs to edge-case responses and simulate changing state across calls in one run." },
+      { name: "Preview and revisions", text: "Preview scenario matches, compare saved tool revisions, and restore a recent configuration." },
+    ],
+  },
+  {
+    icon: Sparkles,
+    title: "Meta AI workflows",
+    description: "Use configured Meta models for more than a generic chat helper.",
+    features: [
+      { name: "Meta AI Tool Studio", text: "Generate editable tool schemas, mock responses, and scenarios from a description." },
+      { name: "Agent Playground", text: "Run a model with selected mock tools and inspect its calls, results, and final answer." },
+      { name: "Responses API reasoning replay", text: "For native Meta Model API runs, replay encrypted reasoning between tool turns with storage disabled." },
+      { name: "Assistant and Semantic QA", text: "Get tool-design help and optionally evaluate answers against successful tool evidence." },
+    ],
+  },
+  {
+    icon: Workflow,
+    title: "Regression testing and coverage",
+    description: "Turn agent expectations into repeatable checks and target behavior not yet exercised.",
+    features: [
+      { name: "Saved test suites", text: "Run named prompt cases with tool-order, answer, response-field, and JSON Schema assertions." },
+      { name: "Coverage-guided generation", text: "Ask Meta to draft cases targeting unobserved arguments, enum values, scenarios, and sequence steps." },
+      { name: "Auto-Improve loop", text: "Measure coverage before and after reviewed rounds, with a configurable limit of two or three rounds." },
+      { name: "Failure and contract reviews", text: "Get evidence-linked failure explanations, follow-up drafts, and advisory contract-risk prompts." },
+    ],
+  },
+  {
+    icon: Play,
+    title: "Run visibility and analysis",
+    description: "Understand what happened during tool calls and regression runs.",
+    features: [
+      { name: "Execution logs", text: "Inspect arguments, responses, validation outcomes, latency, scenario matches, and run IDs." },
+      { name: "Run traces", text: "Review bounded agent traces, model/provider details, and whether reasoning was replayed." },
+      { name: "Replay comparisons", text: "Compare a saved successful request with the current mock response." },
+      { name: "Regression analytics", text: "Explore pass rates, trends, recurring failures, model breakdowns, and observed coverage." },
+    ],
+  },
+  {
+    icon: Code2,
+    title: "Developer integrations",
+    description: "Connect your code and keep checks in your development workflow.",
+    features: [
+      { name: "JavaScript and TypeScript SDK", text: "Call endpoints with run IDs and optional bearer-key authentication using trymockagent." },
+      { name: "HTTP API and Python source", text: "Use the API from any language; the Python SDK is source-only and not published on PyPI." },
+      { name: "CI regression runner", text: "Run saved suites locally or in the included GitHub Actions example; failures return a nonzero exit code." },
+      { name: "Suite import and export", text: "Move validated, versioned regression bundles between workspaces with explicit tool mapping." },
+    ],
+  },
+  {
+    icon: ShieldCheck,
+    title: "Workspace controls and demo",
+    description: "Manage team access and explore a safe example without real business actions.",
+    features: [
+      { name: "Workspaces and roles", text: "Organize tools, test runs, logs, members, and settings in a shared workspace." },
+      { name: "API keys and usage limits", text: "Protect endpoints with revocable keys and apply plan quotas and rate limits." },
+      { name: "Retention and health checks", text: "Configure log retention and inspect the service health endpoint and integration status." },
+      { name: "Seeded refund demo", text: "Walk through a flawed delayed-order flow, Meta review, and a corrected local rerun without issuing a refund." },
+    ],
   },
 ];
 
@@ -229,7 +306,7 @@ export default async function HomePage() {
             </p>
           </div>
 
-          <div className="mt-12 grid gap-x-8 gap-y-10 border-t border-[#e1e9e1] pt-8 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-12 grid gap-x-8 gap-y-10 border-t border-[#e1e9e1] pt-8 sm:grid-cols-2 xl:grid-cols-5">
             {capabilities.map((item) => {
               const Icon = item.icon;
               return (
@@ -245,6 +322,53 @@ export default async function HomePage() {
               );
             })}
           </div>
+        </div>
+      </section>
+
+      <section id="features" className="px-5 py-16 sm:px-8 lg:px-12 lg:py-20">
+        <div className="mx-auto max-w-7xl">
+          <div className="max-w-3xl">
+            <p className="text-xs font-semibold uppercase text-[#4a8064]">The full toolkit</p>
+            <h2 className="mt-3 font-serif text-3xl font-medium leading-tight text-[#17362a] sm:text-4xl">
+              Everything to mock, exercise, and improve agent tool behavior.
+            </h2>
+            <p className="mt-4 text-sm leading-6 text-[#65776c] sm:text-base">
+              Explore MockAgent&apos;s testing, Meta AI, observability, integration, and workspace features at a glance. AI-generated content stays reviewable; coverage reflects the saved traces that have actually been run.
+            </p>
+          </div>
+
+          <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {featureGroups.map((group) => {
+              const Icon = group.icon;
+              return (
+                <article key={group.title} className="rounded-2xl border border-[#dce5dc] bg-white p-6 shadow-[0_12px_35px_-30px_rgba(20,44,37,0.5)]">
+                  <div className="flex items-start gap-3">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#edf5eb] text-[#39805d]">
+                      <Icon className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <h3 className="text-lg font-semibold text-[#1c3b2e]">{group.title}</h3>
+                      <p className="mt-1 text-sm leading-5 text-[#68796f]">{group.description}</p>
+                    </div>
+                  </div>
+                  <ul className="mt-5 space-y-4 border-t border-[#e6ede5] pt-5">
+                    {group.features.map((feature) => (
+                      <li key={feature.name} className="flex gap-2.5">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#39805d]" aria-hidden="true" />
+                        <p className="text-sm leading-5 text-[#68796f]">
+                          <span className="font-semibold text-[#28473a]">{feature.name}.</span>{" "}
+                          {feature.text}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              );
+            })}
+          </div>
+          <p className="mt-6 text-xs leading-5 text-[#718278]">
+            Meta features require a configured provider and use workspace AI quotas. Semantic QA is optional and model-based. Paid checkout availability depends on each deployment&apos;s billing configuration.
+          </p>
         </div>
       </section>
 

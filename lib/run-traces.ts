@@ -9,9 +9,16 @@ export interface RunTraceCall {
   status: number;
 }
 
+export interface RunTraceMetadata {
+  model: string;
+  provider: string;
+  reasoningReplay: boolean;
+}
+
 export interface RunTrace {
   answer: string;
   calls: RunTraceCall[];
+  metadata?: RunTraceMetadata;
 }
 
 export interface RunTraceDifference {
@@ -44,7 +51,8 @@ export function createRunTrace(
     rawArguments?: string;
     response: unknown;
     status: number;
-  }>
+  }>,
+  metadata?: RunTraceMetadata,
 ): RunTrace {
   return {
     answer: answer.slice(0, 12000),
@@ -55,6 +63,7 @@ export function createRunTrace(
       response: boundedJson(call.response, MAX_TRACE_RESPONSE_LENGTH),
       status: call.status,
     })),
+    ...(metadata ? { metadata } : {}),
   };
 }
 

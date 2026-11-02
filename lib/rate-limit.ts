@@ -8,6 +8,7 @@ interface GatewayLimiters {
 }
 
 let gatewayLimiters: GatewayLimiters | null = null;
+let gatewayRedis: Redis | null = null;
 
 function getEnvironmentValue(name: string) {
   const value = process.env[name]?.trim();
@@ -28,6 +29,7 @@ function getGatewayLimiters(): GatewayLimiters | null {
   if (!url || !token) return null;
 
   const redis = new Redis({ url, token });
+  gatewayRedis = redis;
   gatewayLimiters = {
     client: new Ratelimit({
       redis,
@@ -47,6 +49,13 @@ function getGatewayLimiters(): GatewayLimiters | null {
   };
 
   return gatewayLimiters;
+}
+
+export async function probeGatewayRedis(): Promise<"not_configured" | "ok"> {
+  const limiters = getGatewayLimiters();
+  if (!limiters || !gatewayRedis) return "not_configured";
+  await gatewayRedis.ping();
+  return "ok";
 }
 
 export function isGatewayRateLimitConfigured() {
