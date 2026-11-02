@@ -1,11 +1,33 @@
 # MockAgent
 
+**New here?** Start with the [60-second overview](#60-second-demo), then use
+the [documentation index](./docs/README.md) to find setup, architecture, API,
+and contribution guides.
+
+[![CI](https://github.com/shauryasjadaunnn12345/Mockagent/actions/workflows/ci.yml/badge.svg)](https://github.com/shauryasjadaunnn12345/Mockagent/actions/workflows/ci.yml)
+[Report a bug](https://github.com/shauryasjadaunnn12345/Mockagent/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/shauryasjadaunnn12345/Mockagent/issues/new?template=feature_request.yml) · [Contributing](./CONTRIBUTING.md)
+
 **MockAgent tests AI-agent tool behavior before it reaches production services.**
 Define mock endpoints, schemas, scenarios, and response sequences to make edge
 cases repeatable and observable.
 Use Meta-powered coverage guidance to draft tests for behavior your agent has not exercised yet.
 
 **[Open MockAgent](https://mockagent.online)** · [Create an account](https://mockagent.online/login?mode=signup) · [Log in](https://mockagent.online/login?mode=login)
+
+## Find your way around
+
+| I want to… | Start here |
+|---|---|
+| Understand the product and see the main workflow | [Product overview and 60-second demo](#60-second-demo) |
+| Run the app locally | [Local setup guide](./RUN_LOCALLY.md) |
+| Explore the product with a guided tour | [Product walkthrough](./walkthrough.md) |
+| Understand the main components and request flow | [Architecture guide](./docs/ARCHITECTURE.md) |
+| Configure environment variables and integrations | [Configuration reference](./docs/CONFIGURATION.md) |
+| Use the real-agent example or CI runner | [Delayed-order example](./examples/delayed-order-refund/README.md) |
+| Report a bug or suggest an improvement | [GitHub issue forms](https://github.com/shauryasjadaunnn12345/Mockagent/issues/new/choose) |
+| Make a contribution | [Contributing guide](./CONTRIBUTING.md) |
+
+For the full documentation map, see [docs/README.md](./docs/README.md).
 
 ### 60-second demo
 
@@ -213,16 +235,20 @@ Each case can make multiple model requests and consume AI usage. **Run all**
 shows a confirmation first, and **Stop after current** prevents remaining
 cases from starting while allowing the active case to finish.
 
-From a saved run, choose **Replay run** to re-execute its saved prompt, selected
-model, and regression checks with a fresh run ID. Compare the new trace against
-the source, including its answer, ordered tool calls, arguments, responses,
-statuses, model, and provider. Choose **Branch from run** to edit the prompt
-and optionally choose another model while retaining the source test's checks.
-Branches are linked to their source run in history. Replay and branches use
-the current tool schemas, mock responses, and scenarios—not historical copies
-of those definitions—so the UI identifies this as a current-configuration
-rerun. Existing history without a prompt snapshot can fall back to the saved
-case prompt.
+From a saved run, replay its prompt, selected model, and regression checks with
+a fresh run ID. Choose **current config** to use the workspace's current tool
+definitions, or **saved config** to reuse the run's versioned schemas, mock
+responses, and scenarios. Compare the new trace against the source, including
+its answer, ordered tool calls, arguments, responses, statuses, model, and
+provider. Branch from a run to edit the prompt, choose another model, and
+select either configuration. Branches link to their source run in history.
+Saved-config replay reproduces the mocked tool setup, not deterministic model
+output or external systems. Runs created before tool snapshots were introduced
+can only be replayed against current configuration. Existing history without a
+prompt snapshot can fall back to the saved case prompt.
+
+Applying the latest `schema.sql` adds the snapshot column and the short-lived,
+service-role-only table used to authorize saved-config replays.
 
 Use **Generate with Meta AI** in the test-case editor to draft prompt cases
 from the selected tools' schemas, mock responses, and scenarios. Add an

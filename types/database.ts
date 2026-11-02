@@ -266,6 +266,8 @@ export type Database = {
           model: string
           actual_tool_ids: string[]
           prompt_snapshot: string | null
+          tool_snapshots: Json | null
+          has_tool_snapshots: boolean
           branch_from_run_id: string | null
           run_id: string
           status: string
@@ -283,6 +285,7 @@ export type Database = {
           model: string
           actual_tool_ids?: string[]
           prompt_snapshot?: string | null
+          tool_snapshots?: Json | null
           branch_from_run_id?: string | null
           run_id: string
           status: string
@@ -300,6 +303,7 @@ export type Database = {
           model?: string
           actual_tool_ids?: string[]
           prompt_snapshot?: string | null
+          tool_snapshots?: Json | null
           branch_from_run_id?: string | null
           run_id?: string
           status?: string
@@ -307,6 +311,33 @@ export type Database = {
           test_case_name?: string
           suite_id?: string
           trace?: Json | null
+          workspace_id?: string
+        }
+        Relationships: []
+      }
+      agent_run_config_overrides: {
+        Row: {
+          expires_at: string
+          run_id: string
+          tool_ids: string[]
+          token_hash: string
+          tool_snapshots: Json
+          workspace_id: string
+        }
+        Insert: {
+          expires_at: string
+          run_id: string
+          tool_ids: string[]
+          token_hash: string
+          tool_snapshots: Json
+          workspace_id: string
+        }
+        Update: {
+          expires_at?: string
+          run_id?: string
+          tool_ids?: string[]
+          token_hash?: string
+          tool_snapshots?: Json
           workspace_id?: string
         }
         Relationships: []

@@ -106,9 +106,14 @@ dashboard reuses the saved prompt, selected model, and checks, assigns a fresh
 run ID, then compares the new bounded trace with the source run. **Branch from
 run** lets a developer edit the prompt or select another configured model;
 the new run retains the source test's checks and links back to its source.
-These executions deliberately use the current tool definitions and scenario
-configuration, not a restored historical snapshot. Older runs without a saved
-prompt can fall back to the corresponding saved test-case prompt.
+Choose either the current tool definitions or the versioned schema, mock
+response, and scenario snapshot saved with the source run. Snapshot replay uses
+a short-lived, server-authorized override at the gateway and still observes
+current tool activation, API-key requirements, rate limits, and workspace
+quotas. It restores mocked configuration, not external services or deterministic
+model output. Older runs without saved configuration snapshots can only replay
+against current tool configuration; older runs without a saved prompt can fall
+back to the corresponding saved test-case prompt.
 
 ### Slide 8 — Fit the team's access and operating model
 
@@ -813,6 +818,11 @@ Dodo Payments --> signed /api/billing/webhook
 
 ```text
 README.md                           Setup, configuration, deployment, and product notes
+docs/README.md                      Documentation index and topic navigation
+docs/ARCHITECTURE.md                Components, gateway lifecycle, and replay boundaries
+docs/CONFIGURATION.md               Environment variables and integration setup
+CONTRIBUTING.md                     Development workflow and pull-request expectations
+RUN_LOCALLY.md                      Local development setup and validation
 walkthrough.md                      This pitch and end-to-end walkthrough
 schema.sql                          Supabase tables, triggers, functions, views, and RLS
 app/page.tsx                         Marketing landing page

@@ -8,6 +8,7 @@ import {
   enforceWorkspaceQuota,
 } from "@/lib/gateway-guards";
 import { validateAgainstSchema } from "@/lib/validators";
+import { assertRunToolSnapshotBundle } from "@/lib/run-snapshots";
 import {
   parseScenarios,
   resolveScenario,
@@ -156,8 +157,73 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   );
   if (workspaceQuotaResponse) return workspaceQuotaResponse;
 
+  let toolConfiguration: {
+    name: string;
+    json_schema: unknown;
+    mock_response: unknown;
+    scenarios: unknown;
+  } = {
+    name: tool.name,
+    json_schema: tool.json_schema,
+    mock_response: tool.mock_response,
+    scenarios: tool.scenarios,
+  };
+  const snapshotToken = request.headers.get("x-mockagent-config-token");
+  if (snapshotToken) {
+    if (!runId || !/^[0-9a-f]{64}$/.test(snapshotToken)) {
+      return NextResponse.json(
+        { error_code: "INVALID_CONFIG_SNAPSHOT", error: "Run configuration snapshot token is invalid." },
+        { status: 400 }
+      );
+    }
+    const tokenHash = createHash("sha256").update(snapshotToken).digest("hex");
+    const { data: override, error: overrideError } = await supabase
+      .from("agent_run_config_overrides")
+      .select("run_id,workspace_id,tool_ids,tool_snapshots,expires_at")
+      .eq("token_hash", tokenHash)
+      .maybeSingle();
+    if (overrideError) {
+      console.error("MockAgent: failed to load run configuration snapshot", overrideError.message);
+      return NextResponse.json(
+        { error_code: "CONFIG_SNAPSHOT_UNAVAILABLE", error: "Could not load the saved run configuration." },
+        { status: 503 }
+      );
+    }
+    if (
+      !override ||
+      override.run_id !== runId ||
+      override.workspace_id !== tool.workspace_id ||
+      Date.parse(override.expires_at) <= Date.now()
+    ) {
+      return NextResponse.json(
+        { error_code: "INVALID_CONFIG_SNAPSHOT", error: "Run configuration snapshot is expired or does not match this tool." },
+        { status: 403 }
+      );
+    }
+    try {
+      assertRunToolSnapshotBundle(override.tool_snapshots, override.tool_ids);
+      const savedTool = override.tool_snapshots.tools.find((snapshot) => snapshot.id === tool.id);
+      if (!savedTool) throw new Error("Requested tool is not included in the saved run snapshot.");
+      toolConfiguration = {
+        name: savedTool.name,
+        json_schema: savedTool.json_schema,
+        mock_response: savedTool.mock_response,
+        scenarios: savedTool.scenarios,
+      };
+    } catch (error) {
+      console.error(
+        "MockAgent: invalid saved run configuration",
+        error instanceof Error ? error.message : error
+      );
+      return NextResponse.json(
+        { error_code: "INVALID_CONFIG_SNAPSHOT", error: "Saved run configuration is invalid." },
+        { status: 409 }
+      );
+    }
+  }
+
   const { valid, errors } = validateAgainstSchema(
-    tool.json_schema as Record<string, unknown>,
+    toolConfiguration.json_schema as Record<string, unknown>,
     payload
   );
   const errorClass = valid
@@ -200,7 +266,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     priorIdenticalFailures = count ?? 0;
   }
 
-  const scenarios = valid ? parseScenarios(tool.scenarios) : [];
+  const scenarios = valid ? parseScenarios(toolConfiguration.scenarios) : [];
   const scenario = valid ? resolveScenario(scenarios, payload) : null;
   const scenarioIndex = scenario ? scenarios.indexOf(scenario) : null;
   let scenarioAttempt: number | null = null;
@@ -262,7 +328,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       ? injectedFailure
         ? failureBody
         : resolveScenarioResponse(scenario, scenarioStep ?? 1)
-      : tool.mock_response
+      : toolConfiguration.mock_response
     : null;
 
   // Fire-and-forget-ish logging — we still await it so latency_ms in the log
@@ -314,7 +380,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           ? "REPEATED_VALIDATION_FAILURE"
           : errorCode,
         error_class: errorClass,
-        tool: tool.name,
+        tool: toolConfiguration.name,
         message: errorClass === "PERMANENT"
           ? "This tool has an invalid JSON Schema configuration. The tool owner must fix its schema before it can be called."
           : repeatedFailure

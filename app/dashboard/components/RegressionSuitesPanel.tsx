@@ -91,6 +91,7 @@ export interface RegressionRunOption {
   model: string;
   trace: Json | null;
   prompt_snapshot: string | null;
+  has_tool_snapshots: boolean;
   branch_from_run_id: string | null;
   created_at: string;
 }
@@ -293,6 +294,7 @@ export function RegressionSuitesPanel({
   const [branchDraftRunId, setBranchDraftRunId] = useState<string | null>(null);
   const [branchPrompts, setBranchPrompts] = useState<Record<string, string>>({});
   const [branchModels, setBranchModels] = useState<Record<string, string>>({});
+  const [branchReplayConfig, setBranchReplayConfig] = useState<"current" | "original">("current");
   const [replayOutcomes, setReplayOutcomes] = useState<Record<string, ReplayOutcome>>({});
   const [replayErrors, setReplayErrors] = useState<Record<string, string>>({});
   const [failureExplanations, setFailureExplanations] = useState<Record<string, FailureExplanation>>({});
@@ -709,7 +711,12 @@ export function RegressionSuitesPanel({
     suiteId: string,
     caseIndex: number,
     apiKeys: Record<string, string>,
-    options: { promptOverride?: string; model?: string; branchFromRunId?: string } = {}
+    options: {
+      promptOverride?: string;
+      model?: string;
+      branchFromRunId?: string;
+      toolConfigRunId?: string;
+    } = {}
   ): Promise<{ regression: RegressionResult | null; error: string | null; trace: RunTrace | null; runId: string | null; model: string | null }> {
     try {
       const response = await fetch("/api/agent/run", {
@@ -722,6 +729,7 @@ export function RegressionSuitesPanel({
           ...(options.promptOverride === undefined ? {} : { promptOverride: options.promptOverride }),
           ...(options.model === undefined ? {} : { model: options.model }),
           ...(options.branchFromRunId === undefined ? {} : { branchFromRunId: options.branchFromRunId }),
+          ...(options.toolConfigRunId === undefined ? {} : { toolConfigRunId: options.toolConfigRunId }),
         }),
       });
       const body: unknown = await response.json();
@@ -766,7 +774,12 @@ export function RegressionSuitesPanel({
     });
   }
 
-  async function replaySavedRun(run: RegressionRunOption, suite: RegressionSuiteOption, branch: boolean) {
+  async function replaySavedRun(
+    run: RegressionRunOption,
+    suite: RegressionSuiteOption,
+    branch: boolean,
+    configMode: "current" | "original" = "current"
+  ) {
     clearReplayError(run.id);
     const prompt = branch ? branchPrompts[run.id] ?? getPromptForRun(run, suite) : getPromptForRun(run, suite);
     if (!prompt.trim()) {
@@ -792,6 +805,7 @@ export function RegressionSuitesPanel({
           promptOverride: prompt,
           model: branch ? branchModels[run.id].trim() : run.model,
           ...(branch ? { branchFromRunId: run.id } : {}),
+          ...(configMode === "original" ? { toolConfigRunId: run.id } : {}),
         },
       );
       if (!outcome.regression || !outcome.trace || !outcome.runId || !outcome.model) {
@@ -2659,8 +2673,13 @@ export function RegressionSuitesPanel({
                           <div>
                             <h5 className="text-sm font-semibold text-indigo-950">Replay or branch this run</h5>
                             <p className="mt-1 text-xs leading-5 text-slate-600">
-                              Re-run the saved prompt and checks with a fresh run ID. Replay uses the current tool definitions and scenarios; model output may vary. Branch to edit the prompt or choose another model. The original run is preserved for comparison.
+                              Re-run the saved prompt and checks with a fresh run ID. Choose current or saved tool configuration; model output may still vary. Branch to edit the prompt or choose another model. The original run is preserved for comparison.
                             </p>
+                            {!latestRun.has_tool_snapshots && (
+                              <p className="mt-1 text-xs text-amber-800">
+                                This older run has no saved configuration snapshot, so only current-config replay is available.
+                              </p>
+                            )}
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <Button
@@ -2671,8 +2690,20 @@ export function RegressionSuitesPanel({
                               onClick={() => replaySavedRun(latestRun, suite, false)}
                             >
                               <RotateCcw className="h-4 w-4" />
-                              {replayRunId === latestRun.id ? "Replaying…" : "Replay run"}
+                              {replayRunId === latestRun.id ? "Replaying…" : "Replay with current config"}
                             </Button>
+                            {latestRun.has_tool_snapshots && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={replayRunId !== null || runningSuiteId !== null || isPending || !getPromptForRun(latestRun, suite).trim()}
+                                onClick={() => replaySavedRun(latestRun, suite, false, "original")}
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                                {replayRunId === latestRun.id ? "Replaying…" : "Replay with saved config"}
+                              </Button>
+                            )}
                             <Button
                               type="button"
                               size="sm"
@@ -2687,6 +2718,7 @@ export function RegressionSuitesPanel({
                                   ...current,
                                   [latestRun.id]: current[latestRun.id] ?? latestRun.model,
                                 }));
+                                setBranchReplayConfig("current");
                                 setBranchDraftRunId((current) => current === latestRun.id ? null : latestRun.id);
                                 clearReplayError(latestRun.id);
                               }}
@@ -2697,6 +2729,16 @@ export function RegressionSuitesPanel({
                           </div>
                           {branchDraftRunId === latestRun.id && (
                             <div className="space-y-2 rounded border border-indigo-100 bg-white p-3">
+                              <Label htmlFor={`branch-config-${latestRun.id}`}>Tool configuration</Label>
+                              <select
+                                id={`branch-config-${latestRun.id}`}
+                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                                value={branchReplayConfig}
+                                onChange={(event) => setBranchReplayConfig(event.currentTarget.value === "original" ? "original" : "current")}
+                              >
+                                <option value="current">Current workspace configuration</option>
+                                {latestRun.has_tool_snapshots && <option value="original">Saved configuration from this run</option>}
+                              </select>
                               <Label htmlFor={`branch-prompt-${latestRun.id}`}>Branch prompt</Label>
                               <Textarea
                                 id={`branch-prompt-${latestRun.id}`}
@@ -2719,13 +2761,13 @@ export function RegressionSuitesPanel({
                                 }))}
                               />
                               <p className="text-[11px] leading-5 text-slate-500">
-                                The model must be available from the configured provider. Tool schemas, mock responses, and scenario settings use their current workspace versions.
+                                The model must be available from the configured provider. Saved mode reuses this run&apos;s schemas, mock responses, and scenarios, but does not make model output deterministic.
                               </p>
                               <Button
                                 type="button"
                                 size="sm"
                                 disabled={replayRunId !== null || runningSuiteId !== null || isPending}
-                                onClick={() => replaySavedRun(latestRun, suite, true)}
+                                onClick={() => replaySavedRun(latestRun, suite, true, branchReplayConfig)}
                               >
                                 <GitBranch className="h-4 w-4" />
                                 {replayRunId === latestRun.id ? "Running branch…" : "Run branch"}

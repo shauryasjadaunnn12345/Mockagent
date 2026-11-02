@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest an improvement or new capability.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first. Describe the user need rather than only a proposed implementation.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem should this solve?
+      description: Who encounters this and what are they trying to accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      description: Explain the desired workflow or behavior. Alternative approaches are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or other approaches have you tried?
+  - type: textarea
+    id: impact
+    attributes:
+      label: Who benefits and how?
+      description: Note how often this need comes up and its impact.

@@ -363,7 +363,11 @@ alter table public.agent_test_runs
   add column if not exists test_case_name text not null default 'Case 1',
   add column if not exists trace jsonb,
   add column if not exists prompt_snapshot text,
+  add column if not exists tool_snapshots jsonb,
   add column if not exists branch_from_run_id uuid references public.agent_test_runs (id) on delete set null;
+alter table public.agent_test_runs
+  add column if not exists has_tool_snapshots boolean
+  generated always as (tool_snapshots is not null) stored;
 alter table public.agent_test_runs
   drop constraint if exists agent_test_runs_prompt_snapshot_check;
 alter table public.agent_test_runs
@@ -387,6 +391,20 @@ create index if not exists agent_test_runs_workspace_created_idx
 create index if not exists agent_test_runs_branch_from_idx
   on public.agent_test_runs (branch_from_run_id)
   where branch_from_run_id is not null;
+
+create table if not exists public.agent_run_config_overrides (
+  token_hash       text primary key check (char_length(token_hash) = 64),
+  run_id           text not null,
+  workspace_id     uuid not null references public.workspaces (id) on delete cascade,
+  tool_ids         uuid[] not null,
+  tool_snapshots   jsonb not null,
+  expires_at       timestamptz not null
+);
+create index if not exists agent_run_config_overrides_expiry_idx
+  on public.agent_run_config_overrides (expires_at);
+alter table public.agent_run_config_overrides enable row level security;
+revoke all on public.agent_run_config_overrides from public, anon, authenticated;
+grant select, insert, delete on public.agent_run_config_overrides to service_role;
 
 create or replace function public.trim_agent_test_runs()
 returns trigger

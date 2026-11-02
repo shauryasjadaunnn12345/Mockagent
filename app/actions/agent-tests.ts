@@ -19,6 +19,7 @@ type RegressionRunHistoryRow = Pick<
   | "model"
   | "trace"
   | "prompt_snapshot"
+  | "has_tool_snapshots"
   | "branch_from_run_id"
   | "created_at"
 >;
@@ -62,7 +63,7 @@ export async function loadMoreRegressionRuns(
 
   const { data, error } = await supabase
     .from("agent_test_runs")
-    .select("id,suite_id,run_id,status,test_case_index,test_case_name,checks,answer,model,trace,prompt_snapshot,branch_from_run_id,created_at")
+    .select("id,suite_id,run_id,status,test_case_index,test_case_name,checks,answer,model,trace,prompt_snapshot,has_tool_snapshots,branch_from_run_id,created_at")
     .eq("workspace_id", workspaceId)
     .or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)
     .order("created_at", { ascending: false })

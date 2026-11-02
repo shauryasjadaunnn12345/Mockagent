@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   getPlaygroundFunctionName,
@@ -15,6 +16,12 @@ import {
   withSemanticEvaluation,
 } from "@/lib/regression-suites";
 import { createRunTrace } from "@/lib/run-traces";
+import {
+  applyRunToolSnapshot,
+  assertRunToolSnapshotBundle,
+  createRunToolSnapshotBundle,
+  type RunToolSnapshotBundle,
+} from "@/lib/run-snapshots";
 import { enforceAIRequestBudget } from "@/lib/ai-usage";
 import { aiMonthlyRequestLimit } from "@/lib/billing";
 import {
@@ -47,6 +54,9 @@ interface PlaygroundTool {
   name: string;
   description: string | null;
   json_schema: unknown;
+  mock_response: unknown;
+  scenarios: unknown;
+  updated_at: string;
   is_active: boolean;
   require_api_key: boolean;
 }
@@ -86,6 +96,7 @@ interface RegressionRunSource {
   id: string;
   suite_id: string;
   prompt_snapshot: string | null;
+  tool_snapshots: Json | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -232,30 +243,54 @@ export async function POST(request: NextRequest) {
     promptOverride = body.promptOverride.trim();
   }
 
+  const branchSourceId = body.branchFromRunId;
+  const configSnapshotSourceId = body.toolConfigRunId;
+  if (
+    (branchSourceId !== undefined &&
+      (typeof branchSourceId !== "string" ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(branchSourceId))) ||
+    (configSnapshotSourceId !== undefined &&
+      (typeof configSnapshotSourceId !== "string" ||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(configSnapshotSourceId))) ||
+    (branchSourceId !== undefined &&
+      configSnapshotSourceId !== undefined &&
+      branchSourceId !== configSnapshotSourceId)
+  ) {
+    return NextResponse.json({ error: "Run replay source is invalid." }, { status: 400 });
+  }
+  if (
+    (branchSourceId !== undefined || configSnapshotSourceId !== undefined) &&
+    typeof body.suiteId !== "string"
+  ) {
+    return NextResponse.json({ error: "Run replay requires a saved regression test." }, { status: 400 });
+  }
+
   let branchFromRun: RegressionRunSource | null = null;
-  if (body.branchFromRunId !== undefined) {
+  let configSnapshotSource: RegressionRunSource | null = null;
+  const runSourceId = branchSourceId ?? configSnapshotSourceId;
+  if (runSourceId !== undefined) {
     if (
-      typeof body.branchFromRunId !== "string" ||
-      !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.branchFromRunId) ||
+      typeof runSourceId !== "string" ||
       typeof body.suiteId !== "string"
     ) {
       return NextResponse.json({ error: "Branch source run is invalid." }, { status: 400 });
     }
     const { data: source, error: sourceError } = await supabase
       .from("agent_test_runs")
-      .select("id,suite_id,prompt_snapshot")
-      .eq("id", body.branchFromRunId)
+      .select("id,suite_id,prompt_snapshot,tool_snapshots")
+      .eq("id", runSourceId)
       .eq("suite_id", body.suiteId)
       .eq("workspace_id", workspaceId)
       .maybeSingle();
     if (sourceError) {
       console.error("MockAgent playground: failed to load branch source run", sourceError.message);
-      return NextResponse.json({ error: "Could not load the source run for this branch." }, { status: 500 });
+      return NextResponse.json({ error: "Could not load the source run." }, { status: 500 });
     }
     if (!source) {
-      return NextResponse.json({ error: "Branch source run was not found in this workspace." }, { status: 404 });
+      return NextResponse.json({ error: "Run source was not found in this workspace." }, { status: 404 });
     }
-    branchFromRun = source as RegressionRunSource;
+    if (branchSourceId !== undefined) branchFromRun = source as RegressionRunSource;
+    if (configSnapshotSourceId !== undefined) configSnapshotSource = source as RegressionRunSource;
   }
 
   let prompt: unknown = body.prompt;
@@ -334,7 +369,7 @@ export async function POST(request: NextRequest) {
 
   const { data: tools, error: toolsError } = await supabase
     .from("tools")
-    .select("id,name,description,json_schema,is_active,require_api_key")
+    .select("id,name,description,json_schema,mock_response,scenarios,updated_at,is_active,require_api_key")
     .eq("workspace_id", workspaceId)
     .in("id", toolIds);
   if (toolsError) {
@@ -342,11 +377,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Could not load the selected tools." }, { status: 500 });
   }
 
-  const selectedTools = (tools ?? []) as PlaygroundTool[];
+  let selectedTools = (tools ?? []) as PlaygroundTool[];
   if (selectedTools.length !== toolIds.length) {
     return NextResponse.json(
       { error: "One or more selected tools are not in your active workspace." },
       { status: 404 }
+    );
+  }
+  let runToolSnapshot: RunToolSnapshotBundle;
+  try {
+    runToolSnapshot = createRunToolSnapshotBundle(selectedTools);
+    if (configSnapshotSource) {
+      if (!configSnapshotSource.tool_snapshots) {
+        return NextResponse.json(
+          { error: "This older run has no saved tool configuration snapshot. Replay it with current configuration instead." },
+          { status: 409 }
+        );
+      }
+      assertRunToolSnapshotBundle(configSnapshotSource.tool_snapshots, toolIds);
+      runToolSnapshot = configSnapshotSource.tool_snapshots;
+      selectedTools = applyRunToolSnapshot(selectedTools, runToolSnapshot);
+    }
+  } catch (error) {
+    console.error(
+      "MockAgent playground: invalid run tool configuration snapshot",
+      error instanceof Error ? error.message : error
+    );
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Tool configuration snapshot is invalid." },
+      { status: 409 }
     );
   }
   const unavailableTool = selectedTools.find((tool) => !tool.is_active);
@@ -468,6 +527,32 @@ export async function POST(request: NextRequest) {
   }
   const aiRequestLimit = aiMonthlyRequestLimit(workspace.plan, workspace.subscription_status);
   let aiRequestsUsed: number | null = null;
+  const configSnapshotToken = configSnapshotSource
+    ? randomBytes(32).toString("hex")
+    : null;
+  if (configSnapshotToken) {
+    const now = new Date();
+    const { error: cleanupError } = await admin
+      .from("agent_run_config_overrides")
+      .delete()
+      .lt("expires_at", now.toISOString());
+    if (cleanupError) {
+      console.error("MockAgent playground: failed to prune expired replay snapshots", cleanupError.message);
+      return NextResponse.json({ error: "Could not prepare the saved configuration replay." }, { status: 500 });
+    }
+    const { error: overrideError } = await admin.from("agent_run_config_overrides").insert({
+      token_hash: createHash("sha256").update(configSnapshotToken).digest("hex"),
+      run_id: runId,
+      workspace_id: workspaceId,
+      tool_ids: selectedTools.map((tool) => tool.id),
+      tool_snapshots: runToolSnapshot as unknown as Json,
+      expires_at: new Date(now.getTime() + 180_000).toISOString(),
+    });
+    if (overrideError) {
+      console.error("MockAgent playground: failed to stage saved configuration replay", overrideError.message);
+      return NextResponse.json({ error: "Could not prepare the saved configuration replay." }, { status: 500 });
+    }
+  }
 
   while (true) {
     const remainingMs = deadline - Date.now();
@@ -708,6 +793,7 @@ export async function POST(request: NextRequest) {
         model,
         trace: trace as unknown as Json,
         prompt_snapshot: String(prompt).trim(),
+        tool_snapshots: runToolSnapshot as unknown as Json,
         branch_from_run_id: branchFromRun?.id ?? null,
       });
       if (saveError) {
@@ -727,6 +813,15 @@ export async function POST(request: NextRequest) {
           },
           { status: 500 }
         );
+      }
+      if (configSnapshotToken) {
+        const { error: cleanupError } = await admin
+          .from("agent_run_config_overrides")
+          .delete()
+          .eq("token_hash", createHash("sha256").update(configSnapshotToken).digest("hex"));
+        if (cleanupError) {
+          console.error("MockAgent playground: failed to remove replay snapshot token", cleanupError.message);
+        }
       }
       return NextResponse.json({
         runId,
@@ -830,6 +925,9 @@ export async function POST(request: NextRequest) {
           headers: {
             "Content-Type": "application/json",
             "x-mockagent-run-id": runId,
+            ...(configSnapshotToken
+              ? { "x-mockagent-config-token": configSnapshotToken }
+              : {}),
             ...(toolApiKeys[tool.id]
               ? { Authorization: `Bearer ${toolApiKeys[tool.id]}` }
               : {}),
