@@ -265,6 +265,8 @@ export type Database = {
           id: string
           model: string
           actual_tool_ids: string[]
+          prompt_snapshot: string | null
+          branch_from_run_id: string | null
           run_id: string
           status: string
           test_case_index: number
@@ -280,6 +282,8 @@ export type Database = {
           id?: string
           model: string
           actual_tool_ids?: string[]
+          prompt_snapshot?: string | null
+          branch_from_run_id?: string | null
           run_id: string
           status: string
           test_case_index?: number
@@ -295,6 +299,8 @@ export type Database = {
           id?: string
           model?: string
           actual_tool_ids?: string[]
+          prompt_snapshot?: string | null
+          branch_from_run_id?: string | null
           run_id?: string
           status?: string
           test_case_index?: number
@@ -458,6 +464,7 @@ export type Database = {
         Row: {
           average_latency_ms: number | null
           day: string | null
+          injected_failures: number | null
           schema_violations: number | null
           successful_calls: number | null
           total_calls: number | null
@@ -468,6 +475,7 @@ export type Database = {
       }
       tool_stats: {
         Row: {
+          injected_failures: number | null
           last_called_at: string | null
           name: string | null
           schema_violations: number | null
@@ -630,7 +638,7 @@ export const Constants = {
   },
 } as const
 
-export type ExecutionStatus = "SUCCESS" | "SCHEMA_VIOLATION";
+export type ExecutionStatus = "SUCCESS" | "SCHEMA_VIOLATION" | "INJECTED_FAILURE";
 export type Tool = Tables<"tools">;
 export type ToolInsert = TablesInsert<"tools">;
 export type LogEntry = Tables<"logs">;

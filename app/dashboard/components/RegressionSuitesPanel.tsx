@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Lightbulb, Play, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, GitBranch, Lightbulb, Play, Plus, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import {
   createRegressionSuite,
   deleteRegressionSuite,
@@ -90,7 +90,17 @@ export interface RegressionRunOption {
   answer: string;
   model: string;
   trace: Json | null;
+  prompt_snapshot: string | null;
+  branch_from_run_id: string | null;
   created_at: string;
+}
+
+interface ReplayOutcome {
+  runId: string;
+  model: string;
+  passed: boolean;
+  trace: RunTrace;
+  differences: ReturnType<typeof compareRunTraces>;
 }
 
 interface AutoImproveStep extends CoverageImprovement {
@@ -279,6 +289,12 @@ export function RegressionSuitesPanel({
   const [hasMoreRuns, setHasMoreRuns] = useState(initialHasMoreRuns);
   const [loadingMoreRuns, setLoadingMoreRuns] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [replayRunId, setReplayRunId] = useState<string | null>(null);
+  const [branchDraftRunId, setBranchDraftRunId] = useState<string | null>(null);
+  const [branchPrompts, setBranchPrompts] = useState<Record<string, string>>({});
+  const [branchModels, setBranchModels] = useState<Record<string, string>>({});
+  const [replayOutcomes, setReplayOutcomes] = useState<Record<string, ReplayOutcome>>({});
+  const [replayErrors, setReplayErrors] = useState<Record<string, string>>({});
   const [failureExplanations, setFailureExplanations] = useState<Record<string, FailureExplanation>>({});
   const [explainingRunId, setExplainingRunId] = useState<string | null>(null);
   const [explanationErrors, setExplanationErrors] = useState<Record<string, string>>({});
@@ -692,35 +708,117 @@ export function RegressionSuitesPanel({
   async function executeSuite(
     suiteId: string,
     caseIndex: number,
-    apiKeys: Record<string, string>
-  ): Promise<{ regression: RegressionResult | null; error: string | null; trace: RunTrace | null }> {
+    apiKeys: Record<string, string>,
+    options: { promptOverride?: string; model?: string; branchFromRunId?: string } = {}
+  ): Promise<{ regression: RegressionResult | null; error: string | null; trace: RunTrace | null; runId: string | null; model: string | null }> {
     try {
       const response = await fetch("/api/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ suiteId, caseIndex, apiKeys }),
+        body: JSON.stringify({
+          suiteId,
+          caseIndex,
+          apiKeys,
+          ...(options.promptOverride === undefined ? {} : { promptOverride: options.promptOverride }),
+          ...(options.model === undefined ? {} : { model: options.model }),
+          ...(options.branchFromRunId === undefined ? {} : { branchFromRunId: options.branchFromRunId }),
+        }),
       });
       const body: unknown = await response.json();
       const responseBody = isRecord(body) ? body : {};
       const regression = readRegressionResult(responseBody.regression);
       const trace = readRunTrace(responseBody.trace);
+      const runId = typeof responseBody.runId === "string" ? responseBody.runId : null;
+      const model = typeof responseBody.model === "string" ? responseBody.model : null;
       if (!response.ok) {
         return {
           regression: null,
           error: typeof responseBody.error === "string" ? responseBody.error : "Regression test run failed.",
           trace,
+          runId,
+          model,
         };
       }
       if (!regression) {
-        return { regression: null, error: "Regression test completed without a valid result.", trace };
+        return { regression: null, error: "Regression test completed without a valid result.", trace, runId, model };
       }
-      return { regression, error: null, trace };
+      return { regression, error: null, trace, runId, model };
     } catch (requestError) {
       return {
         regression: null,
         error: requestError instanceof Error ? requestError.message : "Regression test run failed.",
         trace: null,
+        runId: null,
+        model: null,
       };
+    }
+  }
+
+  function getPromptForRun(run: RegressionRunOption, suite: RegressionSuiteOption): string {
+    return run.prompt_snapshot ?? suite.test_cases[run.test_case_index]?.prompt ?? "";
+  }
+
+  function clearReplayError(runId: string) {
+    setReplayErrors((current) => {
+      const next = { ...current };
+      delete next[runId];
+      return next;
+    });
+  }
+
+  async function replaySavedRun(run: RegressionRunOption, suite: RegressionSuiteOption, branch: boolean) {
+    clearReplayError(run.id);
+    const prompt = branch ? branchPrompts[run.id] ?? getPromptForRun(run, suite) : getPromptForRun(run, suite);
+    if (!prompt.trim()) {
+      setReplayErrors((current) => ({ ...current, [run.id]: "This older run has no saved prompt. Re-run the saved case to capture a replayable snapshot." }));
+      return;
+    }
+    if (branch && !branchModels[run.id]?.trim()) {
+      setReplayErrors((current) => ({ ...current, [run.id]: "Enter a model name for the branch." }));
+      return;
+    }
+    const missingApiKey = getMissingApiKey(suite.tool_ids);
+    if (missingApiKey) {
+      setReplayErrors((current) => ({ ...current, [run.id]: `Enter the API key for "${missingApiKey.name}" before replaying this run.` }));
+      return;
+    }
+    setReplayRunId(run.id);
+    try {
+      const outcome = await executeSuite(
+        suite.id,
+        run.test_case_index,
+        getApiKeysForTools(suite.tool_ids),
+        {
+          promptOverride: prompt,
+          model: branch ? branchModels[run.id].trim() : run.model,
+          ...(branch ? { branchFromRunId: run.id } : {}),
+        },
+      );
+      if (!outcome.regression || !outcome.trace || !outcome.runId || !outcome.model) {
+        throw new Error(outcome.error ?? "Replay completed without a comparable run trace.");
+      }
+      const originalTrace = readRunTrace(run.trace);
+      if (!originalTrace) throw new Error("The source run has no valid trace to compare.");
+      setReplayOutcomes((current) => ({
+        ...current,
+        [run.id]: {
+          runId: outcome.runId!,
+          model: outcome.model!,
+          passed: outcome.regression!.passed,
+          trace: outcome.trace!,
+          differences: compareRunTraces(originalTrace, outcome.trace!),
+        },
+      }));
+      clearReplayError(run.id);
+      setBranchDraftRunId(null);
+      router.refresh();
+    } catch (replayError) {
+      setReplayErrors((current) => ({
+        ...current,
+        [run.id]: replayError instanceof Error ? replayError.message : "Could not replay this run.",
+      }));
+    } finally {
+      setReplayRunId(null);
     }
   }
 
@@ -2254,6 +2352,9 @@ export function RegressionSuitesPanel({
                   )
                 : undefined;
               const latestTrace = latestRun ? readRunTrace(latestRun.trace) : null;
+              const branchSource = latestRun?.branch_from_run_id
+                ? loadedRuns.find((run) => run.id === latestRun.branch_from_run_id)
+                : undefined;
               const previousTrace = previousRun ? readRunTrace(previousRun.trace) : null;
               const traceDifferences =
                 latestTrace && previousTrace ? compareRunTraces(previousTrace, latestTrace) : null;
@@ -2416,6 +2517,11 @@ export function RegressionSuitesPanel({
                         Latest run ({latestRun.test_case_name}): {latestRun.status} · {new Date(latestRun.created_at).toLocaleString()}
                       </p>
                       <p className="truncate text-xs text-slate-500">Run ID: {latestRun.run_id}</p>
+                      {latestRun.branch_from_run_id && (
+                        <p className="truncate text-xs text-indigo-700">
+                          Branch of {branchSource ? branchSource.run_id : latestRun.branch_from_run_id}
+                        </p>
+                      )}
                     </div>
                   )}
                   {latestRun && (
@@ -2547,6 +2653,109 @@ export function RegressionSuitesPanel({
                         </details>
                       ) : (
                         <p className="text-xs text-slate-500">Trace unavailable. Run this test again to capture one.</p>
+                      )}
+                      {latestTrace && (
+                        <div className="space-y-3 rounded border border-indigo-200 bg-indigo-50/50 p-3">
+                          <div>
+                            <h5 className="text-sm font-semibold text-indigo-950">Replay or branch this run</h5>
+                            <p className="mt-1 text-xs leading-5 text-slate-600">
+                              Re-run the saved prompt and checks with a fresh run ID. Replay uses the current tool definitions and scenarios; model output may vary. Branch to edit the prompt or choose another model. The original run is preserved for comparison.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={replayRunId !== null || runningSuiteId !== null || isPending || !getPromptForRun(latestRun, suite).trim()}
+                              onClick={() => replaySavedRun(latestRun, suite, false)}
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                              {replayRunId === latestRun.id ? "Replaying…" : "Replay run"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={replayRunId !== null || runningSuiteId !== null || isPending || !latestTrace}
+                              onClick={() => {
+                                setBranchPrompts((current) => ({
+                                  ...current,
+                                  [latestRun.id]: current[latestRun.id] ?? getPromptForRun(latestRun, suite),
+                                }));
+                                setBranchModels((current) => ({
+                                  ...current,
+                                  [latestRun.id]: current[latestRun.id] ?? latestRun.model,
+                                }));
+                                setBranchDraftRunId((current) => current === latestRun.id ? null : latestRun.id);
+                                clearReplayError(latestRun.id);
+                              }}
+                            >
+                              <GitBranch className="h-4 w-4" />
+                              {branchDraftRunId === latestRun.id ? "Close branch editor" : "Branch from run"}
+                            </Button>
+                          </div>
+                          {branchDraftRunId === latestRun.id && (
+                            <div className="space-y-2 rounded border border-indigo-100 bg-white p-3">
+                              <Label htmlFor={`branch-prompt-${latestRun.id}`}>Branch prompt</Label>
+                              <Textarea
+                                id={`branch-prompt-${latestRun.id}`}
+                                value={branchPrompts[latestRun.id] ?? getPromptForRun(latestRun, suite)}
+                                maxLength={5000}
+                                rows={4}
+                                onChange={(event) => setBranchPrompts((current) => ({
+                                  ...current,
+                                  [latestRun.id]: event.currentTarget.value,
+                                }))}
+                              />
+                              <Label htmlFor={`branch-model-${latestRun.id}`}>Model</Label>
+                              <Input
+                                id={`branch-model-${latestRun.id}`}
+                                value={branchModels[latestRun.id] ?? latestRun.model}
+                                maxLength={100}
+                                onChange={(event) => setBranchModels((current) => ({
+                                  ...current,
+                                  [latestRun.id]: event.currentTarget.value,
+                                }))}
+                              />
+                              <p className="text-[11px] leading-5 text-slate-500">
+                                The model must be available from the configured provider. Tool schemas, mock responses, and scenario settings use their current workspace versions.
+                              </p>
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={replayRunId !== null || runningSuiteId !== null || isPending}
+                                onClick={() => replaySavedRun(latestRun, suite, true)}
+                              >
+                                <GitBranch className="h-4 w-4" />
+                                {replayRunId === latestRun.id ? "Running branch…" : "Run branch"}
+                              </Button>
+                            </div>
+                          )}
+                          {replayErrors[latestRun.id] && (
+                            <p role="alert" className="text-xs text-red-700">{replayErrors[latestRun.id]}</p>
+                          )}
+                          {replayOutcomes[latestRun.id] && (
+                            <div className="rounded border border-indigo-100 bg-white p-3">
+                              <p className={`text-xs font-semibold ${replayOutcomes[latestRun.id].passed ? "text-emerald-700" : "text-red-700"}`}>
+                                Replay {replayOutcomes[latestRun.id].passed ? "passed" : "failed"} · {replayOutcomes[latestRun.id].model} · run {replayOutcomes[latestRun.id].runId}
+                              </p>
+                              {replayOutcomes[latestRun.id].differences.length === 0 ? (
+                                <p className="mt-2 text-xs text-emerald-700">No trace differences detected from the source run.</p>
+                              ) : (
+                                <ul className="mt-2 space-y-2">
+                                  {replayOutcomes[latestRun.id].differences.map((difference, index) => (
+                                    <li key={`${difference.label}-${index}`} className="grid gap-1 text-xs sm:grid-cols-[9rem_1fr_1fr]">
+                                      <span className="font-medium text-slate-700">{difference.label}</span>
+                                      <span className="line-clamp-4 break-all text-slate-500"><strong>Source:</strong> {difference.before}</span>
+                                      <span className="line-clamp-4 break-all text-slate-700"><strong>Replay:</strong> {difference.after}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
                       {previousRun && (
                         <div className="rounded border border-slate-200 p-3">

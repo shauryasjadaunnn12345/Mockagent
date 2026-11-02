@@ -8,7 +8,12 @@ import {
   enforceWorkspaceQuota,
 } from "@/lib/gateway-guards";
 import { validateAgainstSchema } from "@/lib/validators";
-import { parseScenarios, resolveScenario, resolveScenarioResponse } from "@/lib/scenarios";
+import {
+  parseScenarios,
+  resolveScenario,
+  resolveScenarioResponse,
+  resolveScenarioStep,
+} from "@/lib/scenarios";
 import type { ExecutionStatus, Json } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -198,9 +203,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const scenarios = valid ? parseScenarios(tool.scenarios) : [];
   const scenario = valid ? resolveScenario(scenarios, payload) : null;
   const scenarioIndex = scenario ? scenarios.indexOf(scenario) : null;
+  let scenarioAttempt: number | null = null;
   let scenarioStep: number | null = null;
+  let injectedFailure: ReturnType<typeof resolveScenarioStep>["failure"] = null;
 
-  if (scenario?.responses) {
+  if (scenario?.responses || scenario?.failures?.length) {
     let priorCalls = 0;
     if (runId && scenarioIndex !== null) {
       const { count, error } = await supabase
@@ -208,8 +215,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         .select("id", { count: "exact", head: true })
         .eq("tool_id", tool.id)
         .eq("run_id", runId)
-        .eq("scenario_index", scenarioIndex)
-        .eq("status", "SUCCESS");
+        .eq("scenario_index", scenarioIndex);
 
       if (error) {
         console.error("MockAgent: failed to load scenario sequence state", error.message);
@@ -226,14 +232,36 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
       priorCalls = count ?? 0;
     }
-    scenarioStep = Math.min(priorCalls + 1, scenario.responses.length);
+    const resolvedStep = resolveScenarioStep(scenario, priorCalls);
+    scenarioAttempt = resolvedStep.attempt;
+    scenarioStep = resolvedStep.responseStep;
+    injectedFailure = resolvedStep.failure;
   }
 
+  const loggedScenarioStep = injectedFailure ? scenarioAttempt : scenarioStep;
   const latencyMs = Math.round(performance.now() - startedAt);
-  const status: ExecutionStatus = valid ? "SUCCESS" : "SCHEMA_VIOLATION";
+  const status: ExecutionStatus = !valid
+    ? "SCHEMA_VIOLATION"
+    : injectedFailure
+      ? "INJECTED_FAILURE"
+      : "SUCCESS";
+  const failureBody = injectedFailure
+    ? {
+        status: "INJECTED_FAILURE",
+        error_code: injectedFailure.errorCode,
+        error_class: "TRANSIENT",
+        message: injectedFailure.message,
+        retryable: true,
+        ...(injectedFailure.retryAfterSeconds === undefined
+          ? {}
+          : { retry_after_seconds: injectedFailure.retryAfterSeconds }),
+      }
+    : null;
   const responseBody = valid
     ? scenario
-      ? resolveScenarioResponse(scenario, scenarioStep ?? 1)
+      ? injectedFailure
+        ? failureBody
+        : resolveScenarioResponse(scenario, scenarioStep ?? 1)
       : tool.mock_response
     : null;
 
@@ -250,11 +278,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     status,
     scenario_name: scenario?.name ?? null,
     scenario_index: scenarioIndex,
-    scenario_step: scenarioStep,
+    scenario_step: loggedScenarioStep,
     run_id: runId,
     failure_fingerprint: failureFingerprint,
     error_details: valid
-      ? null
+      ? injectedFailure
+        ? (failureBody as Json)
+        : null
       : (JSON.parse(
           JSON.stringify({
             error_code: errorCode,
@@ -300,12 +330,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
+  if (injectedFailure && failureBody) {
+    return NextResponse.json(failureBody, {
+      status: injectedFailure.status,
+      headers: {
+        "x-mockagent-status": "INJECTED_FAILURE",
+        ...(scenario ? { "x-mockagent-scenario": scenario.name } : {}),
+        ...(loggedScenarioStep !== null ? { "x-mockagent-scenario-step": String(loggedScenarioStep) } : {}),
+        ...(runId ? { "x-mockagent-run-id": runId } : {}),
+        ...(injectedFailure.retryAfterSeconds === undefined
+          ? {}
+          : { "Retry-After": String(injectedFailure.retryAfterSeconds) }),
+        "x-mockagent-latency-ms": String(latencyMs),
+      },
+    });
+  }
+
   return NextResponse.json(responseBody, {
     status: 200,
     headers: {
       "x-mockagent-status": "SUCCESS",
       ...(scenario ? { "x-mockagent-scenario": scenario.name } : {}),
-      ...(scenarioStep !== null ? { "x-mockagent-scenario-step": String(scenarioStep) } : {}),
+      ...(loggedScenarioStep !== null ? { "x-mockagent-scenario-step": String(loggedScenarioStep) } : {}),
       ...(runId ? { "x-mockagent-run-id": runId } : {}),
       "x-mockagent-latency-ms": String(latencyMs),
     },

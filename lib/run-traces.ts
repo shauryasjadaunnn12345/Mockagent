@@ -70,6 +70,21 @@ export function createRunTrace(
 export function compareRunTraces(before: RunTrace, after: RunTrace): RunTraceDifference[] {
   const differences: RunTraceDifference[] = [];
 
+  if (before.metadata?.model !== after.metadata?.model) {
+    differences.push({
+      label: "Model",
+      before: before.metadata?.model ?? "unknown",
+      after: after.metadata?.model ?? "unknown",
+    });
+  }
+  if (before.metadata?.provider !== after.metadata?.provider) {
+    differences.push({
+      label: "Provider",
+      before: before.metadata?.provider ?? "unknown",
+      after: after.metadata?.provider ?? "unknown",
+    });
+  }
+
   if (before.answer !== after.answer) {
     differences.push({
       label: "Final answer",

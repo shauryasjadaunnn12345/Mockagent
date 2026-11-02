@@ -70,7 +70,12 @@ actionable contract feedback."
 Ordered scenarios let a tool return different data for matching inputs. A
 scenario can return one response or a response sequence, which is useful for
 testing changing state, stale-then-current values, and retry behavior. The
-default response remains the fallback when no scenario matches.
+default response remains the fallback when no scenario matches. Scenarios may
+also schedule deterministic transient HTTP failures (429, 500, 502, or 503) at
+specific matching-call steps. Those failures return structured retryable
+errors, respect `Retry-After`, advance the scenario step, and are logged as
+`INJECTED_FAILURE`; reuse a run ID for deterministic retries and recovery.
+Without a run ID, each call starts at the first configured step.
 
 **Example:** A first lookup returns balance 42 from a stale snapshot; the next
 matching call in the same run returns balance 39 from a refreshed snapshot.
@@ -95,6 +100,15 @@ spot when a changed schema, scenario, or response altered behavior.
 
 Replay is a comparison against the current mock; it does not create another
 gateway log or reproduce an external service interaction.
+
+Saved regression runs can also be replayed as complete agent executions: the
+dashboard reuses the saved prompt, selected model, and checks, assigns a fresh
+run ID, then compares the new bounded trace with the source run. **Branch from
+run** lets a developer edit the prompt or select another configured model;
+the new run retains the source test's checks and links back to its source.
+These executions deliberately use the current tool definitions and scenario
+configuration, not a restored historical snapshot. Older runs without a saved
+prompt can fall back to the corresponding saved test-case prompt.
 
 ### Slide 8 — Fit the team's access and operating model
 
@@ -194,7 +208,8 @@ service-role key in a `NEXT_PUBLIC_*` variable.
 
 1. Run [schema.sql](./schema.sql) in the Supabase SQL editor. It creates and
    upgrades the tables, workspace helpers, plan/quota functions, retention
-   function, views, and RLS policies used by the app.
+   function, views, and RLS policies used by the app. Reapply it to existing
+   deployments to update the logs status constraint for `INJECTED_FAILURE`.
 2. Enable Supabase Realtime for `public.logs` so the live execution-log table
    can receive inserts. The schema conditionally adds final-answer submissions
    to the Realtime publication when that publication exists.

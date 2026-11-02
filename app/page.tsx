@@ -31,7 +31,7 @@ const capabilities = [
     number: "02",
     icon: Workflow,
     title: "Exercise more than the happy path",
-    text: "Match inputs to named scenarios and return different responses. Try edge cases without wiring up real services or test accounts.",
+    text: "Match inputs to named scenarios, sequence changing responses, and schedule deterministic transient failures to exercise retries.",
     detail: "CONDITIONAL RESPONSES",
   },
   {
@@ -65,7 +65,7 @@ const featureGroups = [
     features: [
       { name: "HTTP mock endpoints", text: "Give every tool a stable endpoint callable from an agent or test harness." },
       { name: "JSON Schema validation", text: "Check required fields, types, enums, and unexpected properties with actionable errors." },
-      { name: "Scenarios and sequences", text: "Match inputs to edge-case responses and simulate changing state across calls in one run." },
+      { name: "Scenarios, sequences, and faults", text: "Match edge cases, simulate changing state, and schedule retryable HTTP failures by call step." },
       { name: "Preview and revisions", text: "Preview scenario matches, compare saved tool revisions, and restore a recent configuration." },
     ],
   },

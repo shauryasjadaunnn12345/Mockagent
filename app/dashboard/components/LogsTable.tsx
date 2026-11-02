@@ -147,7 +147,11 @@ export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
                   </TableCell>
                   <TableCell>
                     <Badge variant={log.status === "SUCCESS" ? "success" : "destructive"}>
-                      {log.status === "SUCCESS" ? "Success" : "Schema Error"}
+                      {log.status === "SUCCESS"
+                        ? "Success"
+                        : log.status === "INJECTED_FAILURE"
+                          ? "Injected Failure"
+                          : "Schema Error"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-slate-500">

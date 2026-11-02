@@ -9,6 +9,7 @@ export interface DailyUsage {
   total_calls: number | null;
   successful_calls: number | null;
   schema_violations: number | null;
+  injected_failures: number | null;
   average_latency_ms: number | null;
 }
 
@@ -61,7 +62,7 @@ export function AnalyticsPanel({ dailyUsage, workspaceId, retentionDays, maxRete
       </CardHeader>
       <CardContent className="space-y-5">
         {error && <p className="text-sm text-red-700">{error}</p>}
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <p className="text-xs text-slate-500">Calls, last 30 days</p>
             <p className="text-xl font-semibold text-slate-900">{totalCalls.toLocaleString()}</p>
@@ -74,6 +75,12 @@ export function AnalyticsPanel({ dailyUsage, workspaceId, retentionDays, maxRete
             <p className="text-xs text-slate-500">Schema violations</p>
             <p className="text-xl font-semibold text-slate-900">
               {dailyUsage.reduce((sum, day) => sum + (day.schema_violations ?? 0), 0).toLocaleString()}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">Injected failures</p>
+            <p className="text-xl font-semibold text-slate-900">
+              {dailyUsage.reduce((sum, day) => sum + (day.injected_failures ?? 0), 0).toLocaleString()}
             </p>
           </div>
         </div>

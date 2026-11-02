@@ -118,7 +118,12 @@ independent agent run and reuse that ID for the calls within that run.
   scenario-specific response. A scenario may return a sequence of responses
   for testing changing data or retry behavior. Sequences advance on successful
   matching calls with the same run ID; the last response repeats once the
-  sequence is exhausted.
+  sequence is exhausted. For retry tests, configure optional scheduled
+  transient failures (`429`, `500`, `502`, or `503`) at specific matching-call
+  steps. These return structured retryable errors, honor `Retry-After`, and
+  appear as **Injected Failure** in logs. Scheduled failures advance the
+  scenario call step; use the same run ID across retries so failure and
+  recovery are deterministic. Without a run ID, each request starts at step 1.
 - **Execution Logs** show calls, validation failures, latency, responses, and
   run IDs. Replay a saved successful call to compare its result against the
   current mock configuration.
@@ -207,6 +212,17 @@ and should not be treated as proof of correctness.
 Each case can make multiple model requests and consume AI usage. **Run all**
 shows a confirmation first, and **Stop after current** prevents remaining
 cases from starting while allowing the active case to finish.
+
+From a saved run, choose **Replay run** to re-execute its saved prompt, selected
+model, and regression checks with a fresh run ID. Compare the new trace against
+the source, including its answer, ordered tool calls, arguments, responses,
+statuses, model, and provider. Choose **Branch from run** to edit the prompt
+and optionally choose another model while retaining the source test's checks.
+Branches are linked to their source run in history. Replay and branches use
+the current tool schemas, mock responses, and scenarios—not historical copies
+of those definitions—so the UI identifies this as a current-configuration
+rerun. Existing history without a prompt snapshot can fall back to the saved
+case prompt.
 
 Use **Generate with Meta AI** in the test-case editor to draft prompt cases
 from the selected tools' schemas, mock responses, and scenarios. Add an
@@ -410,7 +426,9 @@ revoke keys that are no longer in use.
 This repository contains the MockAgent application. To run your own instance,
 configure Supabase, Upstash rate limiting, the model provider, and—if needed—
 Dodo Payments using [`.env.example`](./.env.example). Apply [`schema.sql`](./schema.sql)
-to your Supabase project before using the app. Before deploying, run:
+to your Supabase project before using the app. Reapply it to existing
+deployments to update the logs status constraint for scheduled
+`INJECTED_FAILURE` entries. Before deploying, run:
 
 ```bash
 npm install

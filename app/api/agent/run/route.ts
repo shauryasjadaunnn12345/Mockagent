@@ -82,6 +82,12 @@ interface RegressionSuite {
   semantic_criteria: string | null;
 }
 
+interface RegressionRunSource {
+  id: string;
+  suite_id: string;
+  prompt_snapshot: string | null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -208,6 +214,50 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let promptOverride: string | null = null;
+  if (body.promptOverride !== undefined) {
+    if (typeof body.suiteId !== "string") {
+      return NextResponse.json({ error: "Prompt overrides are only available when replaying a saved regression case." }, { status: 400 });
+    }
+    if (
+      typeof body.promptOverride !== "string" ||
+      !body.promptOverride.trim() ||
+      body.promptOverride.length > MAX_PLAYGROUND_PROMPT_LENGTH
+    ) {
+      return NextResponse.json(
+        { error: `Prompt override must contain 1 to ${MAX_PLAYGROUND_PROMPT_LENGTH} characters.` },
+        { status: 400 }
+      );
+    }
+    promptOverride = body.promptOverride.trim();
+  }
+
+  let branchFromRun: RegressionRunSource | null = null;
+  if (body.branchFromRunId !== undefined) {
+    if (
+      typeof body.branchFromRunId !== "string" ||
+      !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.branchFromRunId) ||
+      typeof body.suiteId !== "string"
+    ) {
+      return NextResponse.json({ error: "Branch source run is invalid." }, { status: 400 });
+    }
+    const { data: source, error: sourceError } = await supabase
+      .from("agent_test_runs")
+      .select("id,suite_id,prompt_snapshot")
+      .eq("id", body.branchFromRunId)
+      .eq("suite_id", body.suiteId)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    if (sourceError) {
+      console.error("MockAgent playground: failed to load branch source run", sourceError.message);
+      return NextResponse.json({ error: "Could not load the source run for this branch." }, { status: 500 });
+    }
+    if (!source) {
+      return NextResponse.json({ error: "Branch source run was not found in this workspace." }, { status: 404 });
+    }
+    branchFromRun = source as RegressionRunSource;
+  }
+
   let prompt: unknown = body.prompt;
   let toolIds: unknown = body.toolIds;
   let regressionSuite: RegressionSuite | null = null;
@@ -255,7 +305,7 @@ export async function POST(request: NextRequest) {
         semantic_criteria: parseSemanticCriteria(suite.semantic_criteria),
       };
       regressionSuite = parsedSuite;
-      prompt = parsedSuite.prompt;
+      prompt = promptOverride ?? parsedSuite.prompt;
       toolIds = parsedSuite.tool_ids;
     } catch (error) {
       console.error(
@@ -657,6 +707,8 @@ export async function POST(request: NextRequest) {
         checks: evaluation.checks as unknown as Json,
         model,
         trace: trace as unknown as Json,
+        prompt_snapshot: String(prompt).trim(),
+        branch_from_run_id: branchFromRun?.id ?? null,
       });
       if (saveError) {
         console.error("MockAgent playground: failed to save regression run", saveError.message);

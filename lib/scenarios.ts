@@ -1,10 +1,16 @@
 import { validateAgainstSchema } from "./validators.ts";
+import {
+  parseChaosConfig,
+  resolveInjectedFailure,
+  type InjectedFailure,
+} from "./chaos.ts";
 
 export interface MockScenario {
   name: string;
   match: Record<string, unknown>;
   response?: Record<string, unknown>;
   responses?: Record<string, unknown>[];
+  failures?: InjectedFailure[];
 }
 
 export function parseScenarios(value: unknown): MockScenario[] {
@@ -38,6 +44,9 @@ export function parseScenarios(value: unknown): MockScenario[] {
     if ((candidate.response === undefined) === (candidate.responses === undefined)) {
       throw new Error(`Scenario ${index + 1} must define either response or responses.`);
     }
+    const failures = candidate.failures === undefined
+      ? undefined
+      : parseChaosConfig(candidate.failures);
 
     return {
       name: candidate.name.trim(),
@@ -45,6 +54,7 @@ export function parseScenarios(value: unknown): MockScenario[] {
       ...(candidate.response === undefined
         ? { responses: candidate.responses as Record<string, unknown>[] }
         : { response: candidate.response as Record<string, unknown> }),
+      ...(failures === undefined ? {} : { failures }),
     };
   });
 }
@@ -73,6 +83,20 @@ export function resolveScenarioResponse(
     return scenario.responses[responseIndex];
   }
   return scenario.response ?? {};
+}
+
+export function resolveScenarioStep(
+  scenario: MockScenario,
+  priorMatchingCalls: number,
+): { attempt: number; responseStep: number; failure: InjectedFailure | null } {
+  const attempt = priorMatchingCalls + 1;
+  return {
+    attempt,
+    responseStep: scenario.responses
+      ? Math.min(attempt, scenario.responses.length)
+      : attempt,
+    failure: resolveInjectedFailure(scenario.failures, attempt),
+  };
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {

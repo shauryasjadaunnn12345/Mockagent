@@ -360,7 +360,15 @@ create table if not exists public.agent_test_runs (
 );
 alter table public.agent_test_runs
   add column if not exists test_case_index integer not null default 0,
-  add column if not exists test_case_name text not null default 'Case 1';
+  add column if not exists test_case_name text not null default 'Case 1',
+  add column if not exists trace jsonb,
+  add column if not exists prompt_snapshot text,
+  add column if not exists branch_from_run_id uuid references public.agent_test_runs (id) on delete set null;
+alter table public.agent_test_runs
+  drop constraint if exists agent_test_runs_prompt_snapshot_check;
+alter table public.agent_test_runs
+  add constraint agent_test_runs_prompt_snapshot_check
+  check (prompt_snapshot is null or char_length(trim(prompt_snapshot)) between 1 and 5000);
 alter table public.agent_test_runs
   drop constraint if exists agent_test_runs_test_case_index_check;
 alter table public.agent_test_runs
@@ -376,6 +384,9 @@ create index if not exists agent_test_runs_suite_created_idx
   on public.agent_test_runs (suite_id, created_at desc);
 create index if not exists agent_test_runs_workspace_created_idx
   on public.agent_test_runs (workspace_id, created_at desc, id desc);
+create index if not exists agent_test_runs_branch_from_idx
+  on public.agent_test_runs (branch_from_run_id)
+  where branch_from_run_id is not null;
 
 create or replace function public.trim_agent_test_runs()
 returns trigger
@@ -675,7 +686,7 @@ create table if not exists public.logs (
   payload          jsonb not null default '{}'::jsonb,     -- incoming tool-call arguments
   response_body   jsonb,                                   -- returned mock response for replay comparisons
   api_key_id       uuid references public.api_keys (id) on delete set null,
-  status           text not null check (status in ('SUCCESS', 'SCHEMA_VIOLATION')),
+  status           text not null check (status in ('SUCCESS', 'SCHEMA_VIOLATION', 'INJECTED_FAILURE')),
   scenario_name    text,
   scenario_index   integer,
   scenario_step    integer,
@@ -685,6 +696,10 @@ create table if not exists public.logs (
   latency_ms       integer not null default 0,
   created_at       timestamptz not null default now()
 );
+alter table public.logs drop constraint if exists logs_status_check;
+alter table public.logs
+  add constraint logs_status_check
+  check (status in ('SUCCESS', 'SCHEMA_VIOLATION', 'INJECTED_FAILURE'));
 
 create table if not exists public.final_answer_submissions (
   id               uuid primary key default uuid_generate_v4(),
@@ -1121,7 +1136,8 @@ select
   count(l.id) filter (where l.status = 'SCHEMA_VIOLATION')      as schema_violations,
   count(l.id) filter (where l.status = 'SUCCESS')               as successful_calls,
   max(l.created_at)                                             as last_called_at,
-  t.workspace_id
+  t.workspace_id,
+  count(l.id) filter (where l.status = 'INJECTED_FAILURE')      as injected_failures
 from public.tools t
 left join public.logs l on l.tool_id = t.id
 group by t.id, t.user_id, t.name;
@@ -1136,7 +1152,8 @@ select
   count(*) filter (where status = 'SUCCESS')::integer as successful_calls,
   count(*) filter (where status = 'SCHEMA_VIOLATION')::integer as schema_violations,
   round(avg(latency_ms))::integer as average_latency_ms,
-  workspace_id
+  workspace_id,
+  count(*) filter (where status = 'INJECTED_FAILURE')::integer as injected_failures
 from public.logs
 group by user_id, date_trunc('day', created_at)::date, workspace_id;
 

@@ -144,7 +144,7 @@ export default async function DashboardPage() {
       .order("created_at", { ascending: false }),
     supabase
       .from("daily_usage")
-      .select("day,total_calls,successful_calls,schema_violations,average_latency_ms")
+      .select("day,total_calls,successful_calls,schema_violations,injected_failures,average_latency_ms")
       .eq("workspace_id", activeWorkspaceId)
       .order("day", { ascending: false })
       .limit(30),
@@ -157,7 +157,7 @@ export default async function DashboardPage() {
       .limit(50),
     supabase
       .from("agent_test_runs")
-      .select("id,suite_id,run_id,status,test_case_index,test_case_name,checks,answer,model,trace,created_at")
+      .select("id,suite_id,run_id,status,test_case_index,test_case_name,checks,answer,model,trace,prompt_snapshot,branch_from_run_id,created_at")
       .eq("workspace_id", activeWorkspaceId)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })

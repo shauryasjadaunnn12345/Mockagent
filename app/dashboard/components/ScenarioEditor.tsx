@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { parseScenarios, resolveScenario, resolveScenarioResponse } from "@/lib/scenarios";
+import { resolveInjectedFailure } from "@/lib/chaos";
 import { validateSchemaDefinition } from "@/lib/validators";
 
 interface ScenarioDraft {
@@ -15,6 +16,7 @@ interface ScenarioDraft {
   match: string;
   response: string;
   responses: string;
+  failures: string;
   isSequence: boolean;
 }
 
@@ -35,6 +37,7 @@ function createDraft(value?: unknown, id = 0): ScenarioDraft {
     match: JSON.stringify(record.match ?? { type: "object" }, null, 2),
     response: JSON.stringify(record.response ?? {}, null, 2),
     responses: JSON.stringify(record.responses ?? [{}], null, 2),
+    failures: JSON.stringify(record.failures ?? [], null, 2),
     isSequence: sequence,
   };
 }
@@ -49,13 +52,16 @@ function serializeDrafts(drafts: ScenarioDraft[]): string {
     let match: unknown;
     let response: unknown;
     let responses: unknown;
+    let failures: unknown;
     try { match = JSON.parse(draft.match); } catch { match = draft.match; }
     try { response = JSON.parse(draft.response); } catch { response = draft.response; }
     try { responses = JSON.parse(draft.responses); } catch { responses = draft.responses; }
+    try { failures = JSON.parse(draft.failures); } catch { failures = draft.failures; }
     return {
       name: draft.name,
       match,
       ...(draft.isSequence ? { responses } : { response }),
+      failures,
     };
   }));
 }
@@ -98,6 +104,13 @@ export function ScenarioEditor({ name, idPrefix, value }: ScenarioEditorProps) {
       const step = match.responses
         ? Math.min(Math.max(previewStep, 1), match.responses.length)
         : 1;
+      const failure = resolveInjectedFailure(match.failures, previewStep);
+      if (failure) {
+        setPreview(
+          `Matched "${match.name}" (call ${previewStep}):\nInjected HTTP ${failure.status} ${failure.errorCode}\n${failure.message}`,
+        );
+        return;
+      }
       const response = resolveScenarioResponse(match, previewStep);
       setPreview(`Matched "${match.name}" (previewing response ${step}):\n${JSON.stringify(response, null, 2)}`);
     } catch (error) {
@@ -123,7 +136,7 @@ export function ScenarioEditor({ name, idPrefix, value }: ScenarioEditorProps) {
         </Button>
       </div>
       <p className="text-xs text-slate-500">
-        Scenarios are checked in order; the first matching JSON Schema wins. Use a single response or a response sequence.
+        Scenarios are checked in order; the first matching JSON Schema wins. Use a response sequence and optional scheduled transient failures to test retries.
       </p>
       {drafts.length === 0 && (
         <p className="rounded border border-dashed p-3 text-xs text-slate-500">
@@ -184,6 +197,20 @@ export function ScenarioEditor({ name, idPrefix, value }: ScenarioEditorProps) {
               onChange={(event) => updateDraft(draft.id, { isSequence: event.currentTarget.checked })}
             />
             Use ordered response sequence
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-slate-700">
+            Scheduled transient failures (optional JSON array)
+            <Textarea
+              aria-label={`Scenario ${index + 1} scheduled failures`}
+              value={draft.failures}
+              onChange={(event) => updateDraft(draft.id, { failures: event.currentTarget.value })}
+              spellCheck={false}
+              rows={3}
+              className="font-mono text-xs"
+            />
+            <span className="block font-normal text-slate-500">
+              Example: [{`{"step":1,"status":503,"errorCode":"UPSTREAM_UNAVAILABLE","message":"Try again","retryAfterSeconds":1}`}]
+            </span>
           </label>
         </fieldset>
       ))}
