@@ -19,6 +19,7 @@ Use Meta-powered coverage guidance to draft tests for behavior your agent has no
 | I want to… | Start here |
 |---|---|
 | Understand the product and see the main workflow | [Product overview and 60-second demo](#60-second-demo) |
+| Record a product demo | [Five-minute demo script](./docs/DEMO_SCRIPT.md) |
 | Run the app locally | [Local setup guide](./RUN_LOCALLY.md) |
 | Explore the product with a guided tour | [Product walkthrough](./walkthrough.md) |
 | Understand the main components and request flow | [Architecture guide](./docs/ARCHITECTURE.md) |

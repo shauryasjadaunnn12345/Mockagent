@@ -14,6 +14,8 @@ The guides below also explain how to run or self-host a separate instance.
   initialization, development server, and local validation.
 - [Product walkthrough](../walkthrough.md): guided product tour, demo script,
   gateway behavior, data model, and technical limits.
+- [Five-minute recording script](./DEMO_SCRIPT.md): timed narration and screen
+  directions for a safe hosted-product demo.
 
 ## Understand and integrate
 

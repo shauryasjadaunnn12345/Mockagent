@@ -145,6 +145,11 @@ first tool is passing.
 This uses an `issue_refund` example. It is suitable for a five-minute
 walkthrough.
 
+For a ready-to-record, timed five-minute version of the hosted demo, use the
+[recording script](./docs/DEMO_SCRIPT.md). It covers the browser-side sandbox,
+Meta explanation and reviewed draft, rerun, coverage panel, and narration
+notes.
+
 ### Before the demo
 
 - Have a MockAgent workspace and one tool called `issue_refund`.
