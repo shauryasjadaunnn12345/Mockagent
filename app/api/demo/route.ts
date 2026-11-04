@@ -15,6 +15,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+function getDemoFailureMessage(error: unknown, phase: string): string {
+  const message = error instanceof Error ? error.message : "";
+  const status = message.match(/Meta (?:AI|Model API) HTTP (\d{3})/)?.[1];
+  if (status === "429") return "Meta AI is rate-limiting requests. Wait briefly, then run the demo again.";
+  if (status === "401" || status === "403") {
+    return "Meta AI rejected its configured credentials. Ask an administrator to check the API key.";
+  }
+  if (status && Number(status) >= 500) {
+    return "The Meta AI service is temporarily unavailable. Try again later.";
+  }
+  if (status) {
+    return `Meta AI rejected the request (HTTP ${status}). Check the configured model and provider settings.`;
+  }
+  if (/fetch failed|network|timed out|timeout/i.test(message)) {
+    return "Could not reach the Meta AI provider. Check provider availability and try again.";
+  }
+  if (phase === "explanation validation") {
+    return "Meta AI returned an explanation that did not validate against the failed check. Check server logs for details.";
+  }
+  if (phase === "regression draft validation") {
+    return "Meta AI returned a regression draft that did not pass validation. Check server logs for details.";
+  }
+  return "Meta AI could not return a valid response. Check server logs for details, then try again.";
+}
+
 export async function POST() {
   const supabase = await createClient();
   const {
@@ -69,6 +94,7 @@ export async function POST() {
   const budget = await enforceAIRequestBudget(admin, workspaceId);
   if (budget.response) return budget.response;
 
+  let phase = "Meta AI request";
   try {
     const result = await analyzeDemoFailure({
       flawedAgentPrompt: DEMO_FLAWED_AGENT_PROMPT,
@@ -90,10 +116,12 @@ export async function POST() {
     if (!isRecord(result)) {
       throw new Error("Meta AI returned an invalid demo review.");
     }
+    phase = "explanation validation";
     const explanation = parseRegressionFailureExplanation(
       { summary: result.summary, findings: result.findings },
       [DEMO_FAILED_CHECK],
     );
+    phase = "regression draft validation";
     const testCases = parseGeneratedRegressionTestCases({ test_cases: result.test_cases });
     return NextResponse.json({
       explanation,
@@ -103,12 +131,12 @@ export async function POST() {
     });
   } catch (error) {
     console.error(
-      "MockAgent demo: Meta analysis or draft validation failed",
+      `MockAgent demo: ${phase} failed`,
       error instanceof Error ? error.message : error,
     );
     return NextResponse.json(
       {
-        error: "Could not create a validated demo explanation and regression draft. Try again later.",
+        error: getDemoFailureMessage(error, phase),
         aiUsage: { used: budget.used, limit: aiRequestLimit },
       },
       { status: 502 },
