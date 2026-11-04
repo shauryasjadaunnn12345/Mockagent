@@ -48,15 +48,21 @@ If `MODEL_API_KEY` is not set, the compatible provider variables can be used:
 | `SEMANTIC_JUDGE_API_KEY` | Server-side provider credential. |
 | `SEMANTIC_JUDGE_MODEL` | Model identifier available from the configured provider. |
 
+For the Meta coverage demo, `GEMINI_API_KEY` enables Gemini as the preferred
+fallback when the first-party Meta API returns HTTP 429. `GEMINI_MODEL` selects
+the Gemini model and defaults to `gemini-3.8-flash`. If Gemini is not
+configured, the demo falls back to the compatible provider above. These
+Gemini variables do not change the provider used by other AI features.
+
 The configured provider powers AI-assisted tool and regression drafts,
 explanations, contract review, semantic evaluation, and Playground runs.
 Requests send the relevant prompts, tool definitions, and run evidence to the
 provider. Review generated content; do not include sensitive data without
 approval.
 
-When both providers are configured, the Meta coverage demo retries through
-Baseten if the first-party Meta API returns HTTP 429. Other AI features continue
-using the selected primary provider.
+The Meta coverage demo retries through Gemini first, or the compatible provider
+if Gemini is not configured, when the first-party Meta API returns HTTP 429.
+Other AI features continue using the selected primary provider.
 
 ## Dodo Payments
 

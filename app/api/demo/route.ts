@@ -17,13 +17,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getDemoFailureMessage(error: unknown, phase: string): string {
   const message = error instanceof Error ? error.message : "";
-  const provider = message.match(/(Meta AI|Meta Model API|Baseten) HTTP \d{3}/)?.[1];
-  const status = message.match(/(?:Meta AI|Meta Model API|Baseten) HTTP (\d{3})/)?.[1];
-  if (status === "429" && provider === "Baseten") {
-    return "Baseten is also rate-limiting requests. Check the Baseten quota, then try again.";
+  const provider = message.match(/(Meta AI|Meta Model API|Baseten|Gemini) HTTP \d{3}/)?.[1];
+  const status = message.match(/(?:Meta AI|Meta Model API|Baseten|Gemini) HTTP (\d{3})/)?.[1];
+  if (status === "429" && provider && provider !== "Meta AI" && provider !== "Meta Model API") {
+    return `${provider} is also rate-limiting requests. Check its quota, then try again.`;
   }
   if (status === "429") {
-    return "Meta AI is rate-limiting requests. Configure SEMANTIC_JUDGE_API_KEY to use Baseten as a fallback, then try again.";
+    return "Meta AI is rate-limiting requests. Configure GEMINI_API_KEY to use Gemini as a fallback, then try again.";
   }
   if (status === "401" || status === "403") {
     return `${provider ?? "The AI provider"} rejected its configured credentials. Ask an administrator to check the API key.`;
@@ -120,8 +120,8 @@ export async function POST() {
         ],
       },
     }, {
-      onProviderFallback: (fallbackModel) => {
-        model = fallbackModel;
+      onProviderFallback: (provider, fallbackModel) => {
+        model = `${provider} · ${fallbackModel}`;
       },
     });
     if (!isRecord(result)) {

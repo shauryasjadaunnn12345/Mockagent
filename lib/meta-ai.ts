@@ -1,4 +1,4 @@
-// Centralized Meta AI integration with native Model API and Baseten-compatible fallback.
+// Centralized Meta AI integration with compatible-provider fallbacks.
 
 export const META_DEFAULT_MODEL = "meta-models/muse-spark-open-1026";
 export const META_DEFAULT_BASE_URL = "https://inference.baseten.co/v1";
@@ -33,6 +33,18 @@ function getBasetenConfig() {
     apiKey,
     model: process.env.SEMANTIC_JUDGE_MODEL?.trim() || META_DEFAULT_MODEL,
     baseUrl: (process.env.SEMANTIC_JUDGE_BASE_URL?.trim() || META_DEFAULT_BASE_URL).replace(/\/+$/, ""),
+    name: "Baseten",
+    configured: Boolean(apiKey),
+  };
+}
+
+function getGeminiConfig() {
+  const apiKey = process.env.GEMINI_API_KEY?.trim() ?? "";
+  return {
+    apiKey,
+    model: process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    name: "Gemini",
     configured: Boolean(apiKey),
   };
 }
@@ -45,7 +57,7 @@ export async function metaChatCompletion(opts: {
   maxTokens?: number;
   signal?: AbortSignal;
   fallbackToBasetenOnRateLimit?: boolean;
-  onProviderFallback?: (model: string) => void;
+  onProviderFallback?: (provider: string, model: string) => void;
 }) {
   const config = getMetaConfig();
   if (!config.apiKey) throw new Error("Meta AI provider is not configured.");
@@ -67,7 +79,8 @@ export async function metaChatCompletion(opts: {
     opts.fallbackToBasetenOnRateLimit &&
     config.provider === "meta-model-api"
   ) {
-    const fallback = getBasetenConfig();
+    const gemini = getGeminiConfig();
+    const fallback = gemini.configured ? gemini : getBasetenConfig();
     if (fallback.configured) {
       const fallbackResponse = await fetch(`${fallback.baseUrl}/chat/completions`, {
         method: "POST",
@@ -80,9 +93,9 @@ export async function metaChatCompletion(opts: {
       });
       if (!fallbackResponse.ok) {
         const text = await fallbackResponse.text().catch(() => "");
-        throw new Error(`Baseten HTTP ${fallbackResponse.status}: ${text.slice(0, 200)}`);
+        throw new Error(`${fallback.name} HTTP ${fallbackResponse.status}: ${text.slice(0, 200)}`);
       }
-      opts.onProviderFallback?.(fallback.model);
+      opts.onProviderFallback?.(fallback.name, fallback.model);
       return (await fallbackResponse.json()) as unknown;
     }
   }
@@ -330,7 +343,7 @@ export async function analyzeDemoFailure(input: {
   }>;
   failedCheckName: string;
   trace: unknown;
-}, opts: { onProviderFallback?: (model: string) => void } = {}) {
+}, opts: { onProviderFallback?: (provider: string, model: string) => void } = {}) {
   const response = await metaChatCompletion({
     jsonMode: true,
     maxTokens: 1800,
