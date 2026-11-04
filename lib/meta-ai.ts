@@ -27,6 +27,16 @@ export function getMetaConfig() {
   return { apiKey, model, baseUrl, provider, configured: Boolean(apiKey) };
 }
 
+function getBasetenConfig() {
+  const apiKey = process.env.SEMANTIC_JUDGE_API_KEY?.trim() ?? "";
+  return {
+    apiKey,
+    model: process.env.SEMANTIC_JUDGE_MODEL?.trim() || META_DEFAULT_MODEL,
+    baseUrl: (process.env.SEMANTIC_JUDGE_BASE_URL?.trim() || META_DEFAULT_BASE_URL).replace(/\/+$/, ""),
+    configured: Boolean(apiKey),
+  };
+}
+
 export async function metaChatCompletion(opts: {
   messages: { role: "system" | "user" | "assistant"; content: string }[];
   model?: string;
@@ -34,25 +44,52 @@ export async function metaChatCompletion(opts: {
   jsonMode?: boolean;
   maxTokens?: number;
   signal?: AbortSignal;
+  fallbackToBasetenOnRateLimit?: boolean;
+  onProviderFallback?: (model: string) => void;
 }) {
-  const { apiKey, model, baseUrl } = getMetaConfig();
-  if (!apiKey) throw new Error("Meta AI provider is not configured.");
+  const config = getMetaConfig();
+  if (!config.apiKey) throw new Error("Meta AI provider is not configured.");
   const body: Record<string, unknown> = {
-    model: opts.model ?? model,
+    model: opts.model ?? config.model,
     temperature: opts.temperature ?? 0,
     messages: opts.messages,
   };
   if (opts.jsonMode) body.response_format = { type: "json_object" };
   if (opts.maxTokens) body.max_tokens = opts.maxTokens;
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal: opts.signal,
   });
+  if (
+    res.status === 429 &&
+    opts.fallbackToBasetenOnRateLimit &&
+    config.provider === "meta-model-api"
+  ) {
+    const fallback = getBasetenConfig();
+    if (fallback.configured) {
+      const fallbackResponse = await fetch(`${fallback.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${fallback.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...body, model: opts.model ?? fallback.model }),
+        signal: opts.signal,
+      });
+      if (!fallbackResponse.ok) {
+        const text = await fallbackResponse.text().catch(() => "");
+        throw new Error(`Baseten HTTP ${fallbackResponse.status}: ${text.slice(0, 200)}`);
+      }
+      opts.onProviderFallback?.(fallback.model);
+      return (await fallbackResponse.json()) as unknown;
+    }
+  }
   if (!res.ok) {
     const t = await res.text().catch(() => "");
-    throw new Error(`Meta AI HTTP ${res.status}: ${t.slice(0,200)}`);
+    const provider = config.provider === "baseten" ? "Baseten" : "Meta AI";
+    throw new Error(`${provider} HTTP ${res.status}: ${t.slice(0,200)}`);
   }
   return (await res.json()) as unknown;
 }
@@ -293,10 +330,12 @@ export async function analyzeDemoFailure(input: {
   }>;
   failedCheckName: string;
   trace: unknown;
-}) {
+}, opts: { onProviderFallback?: (model: string) => void } = {}) {
   const response = await metaChatCompletion({
     jsonMode: true,
     maxTokens: 1800,
+    fallbackToBasetenOnRateLimit: true,
+    onProviderFallback: opts.onProviderFallback,
     messages: [
       {
         role: "system",

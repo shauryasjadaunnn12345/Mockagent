@@ -54,6 +54,10 @@ Requests send the relevant prompts, tool definitions, and run evidence to the
 provider. Review generated content; do not include sensitive data without
 approval.
 
+When both providers are configured, the Meta coverage demo retries through
+Baseten if the first-party Meta API returns HTTP 429. Other AI features continue
+using the selected primary provider.
+
 ## Dodo Payments
 
 | Variable | Purpose |

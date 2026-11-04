@@ -17,16 +17,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getDemoFailureMessage(error: unknown, phase: string): string {
   const message = error instanceof Error ? error.message : "";
-  const status = message.match(/Meta (?:AI|Model API) HTTP (\d{3})/)?.[1];
-  if (status === "429") return "Meta AI is rate-limiting requests. Wait briefly, then run the demo again.";
+  const provider = message.match(/(Meta AI|Meta Model API|Baseten) HTTP \d{3}/)?.[1];
+  const status = message.match(/(?:Meta AI|Meta Model API|Baseten) HTTP (\d{3})/)?.[1];
+  if (status === "429" && provider === "Baseten") {
+    return "Baseten is also rate-limiting requests. Check the Baseten quota, then try again.";
+  }
+  if (status === "429") {
+    return "Meta AI is rate-limiting requests. Configure SEMANTIC_JUDGE_API_KEY to use Baseten as a fallback, then try again.";
+  }
   if (status === "401" || status === "403") {
-    return "Meta AI rejected its configured credentials. Ask an administrator to check the API key.";
+    return `${provider ?? "The AI provider"} rejected its configured credentials. Ask an administrator to check the API key.`;
   }
   if (status && Number(status) >= 500) {
-    return "The Meta AI service is temporarily unavailable. Try again later.";
+    return `${provider ?? "The AI provider"} is temporarily unavailable. Try again later.`;
   }
   if (status) {
-    return `Meta AI rejected the request (HTTP ${status}). Check the configured model and provider settings.`;
+    return `${provider ?? "The AI provider"} rejected the request (HTTP ${status}). Check the configured model and provider settings.`;
   }
   if (/fetch failed|network|timed out|timeout/i.test(message)) {
     return "Could not reach the Meta AI provider. Check provider availability and try again.";
@@ -85,7 +91,8 @@ export async function POST() {
     console.error("MockAgent demo: failed to load workspace plan", workspaceError?.message);
     return NextResponse.json({ error: "Could not load your workspace plan." }, { status: 500 });
   }
-  const { configured, model } = getMetaConfig();
+  const { configured, model: configuredModel } = getMetaConfig();
+  let model = configuredModel;
   if (!configured) {
     return NextResponse.json({ error: "Meta AI is not configured." }, { status: 503 });
   }
@@ -111,6 +118,10 @@ export async function POST() {
           { toolName: "lookup_order", arguments: { order_id: "demo-42" }, response: { status: "pending" }, status: 200 },
           { toolName: "issue_refund", arguments: { order_id: "demo-42", reason: "delivery_delay" }, response: { success: false, error: "Confirm the current order status before refunding." }, status: 409 },
         ],
+      },
+    }, {
+      onProviderFallback: (fallbackModel) => {
+        model = fallbackModel;
       },
     });
     if (!isRecord(result)) {
