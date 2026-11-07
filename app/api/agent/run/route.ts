@@ -56,6 +56,7 @@ interface PlaygroundTool {
   json_schema: unknown;
   mock_response: unknown;
   scenarios: unknown;
+  final_answer_assertions: unknown;
   updated_at: string;
   is_active: boolean;
   require_api_key: boolean;
@@ -369,7 +370,7 @@ export async function POST(request: NextRequest) {
 
   const { data: tools, error: toolsError } = await supabase
     .from("tools")
-    .select("id,name,description,json_schema,mock_response,scenarios,updated_at,is_active,require_api_key")
+    .select("id,name,description,json_schema,mock_response,scenarios,final_answer_assertions,updated_at,is_active,require_api_key")
     .eq("workspace_id", workspaceId)
     .in("id", toolIds);
   if (toolsError) {

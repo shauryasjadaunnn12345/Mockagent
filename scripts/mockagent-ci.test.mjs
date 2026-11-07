@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -81,4 +84,24 @@ test("CI runner reports missing requested suite IDs", async () => {
   );
   assert.equal(result.code, 2);
   assert.match(result.stderr, /suite IDs were not found/);
+});
+
+test("CI runner writes a machine-readable report without exposing its API key", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mockagent-ci-"));
+  const reportPath = join(directory, "results.json");
+  const apiKey = `ma_live_${"a".repeat(64)}`;
+  try {
+    const result = await runCiRunner(
+      [{ passed: false, checks: [{ name: `Failed check ${apiKey}`, passed: false }] }],
+      { MOCKAGENT_RESULT_FILE: reportPath, MOCKAGENT_API_KEY: apiKey },
+    );
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    assert.equal(result.code, 1);
+    assert.equal(report.status, "failed");
+    assert.equal(report.failedCases, 1);
+    assert.match(report.results[0].detail, /Failed check \[REDACTED\]/);
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(apiKey));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

@@ -1,10 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { NextResponse, type NextRequest } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import type { createAdminClient } from "./supabase/server";
 import {
   checkGatewayRateLimit,
   isGatewayRateLimitConfigured,
-} from "@/lib/rate-limit";
+} from "./rate-limit.ts";
 
 export interface ApiKeyProtectedTool {
   id: string;
@@ -14,9 +13,9 @@ export interface ApiKeyProtectedTool {
 }
 
 export async function enforceApiKey(
-  request: NextRequest,
+  request: Request,
   tool: ApiKeyProtectedTool
-): Promise<{ apiKeyId: string | null; response: NextResponse | null }> {
+): Promise<{ apiKeyId: string | null; response: Response | null }> {
   if (!tool.require_api_key) return { apiKeyId: null, response: null };
 
   const authorization = request.headers.get("authorization");
@@ -24,7 +23,7 @@ export async function enforceApiKey(
   if (!token) {
     return {
       apiKeyId: null,
-      response: NextResponse.json(
+      response: Response.json(
         {
           error_code: "API_KEY_REQUIRED",
           error_class: "PERMANENT",
@@ -36,7 +35,7 @@ export async function enforceApiKey(
     };
   }
 
-  const supabase = createAdminClient();
+  const supabase = (await import("./supabase/server.ts")).createAdminClient();
   const { data: apiKey } = await supabase
     .from("api_keys")
     .select("id, key_hash, revoked_at")
@@ -50,7 +49,7 @@ export async function enforceApiKey(
   if (!apiKey || apiKey.revoked_at || !validHash) {
     return {
       apiKeyId: null,
-      response: NextResponse.json(
+      response: Response.json(
         {
           error_code: "INVALID_API_KEY",
           error_class: "PERMANENT",
@@ -69,14 +68,14 @@ export async function enforceWorkspaceQuota(
   supabase: ReturnType<typeof createAdminClient>,
   workspaceId: string,
   apiKeyId: string | null
-): Promise<NextResponse | null> {
+): Promise<Response | null> {
   const { data: usage, error } = await supabase.rpc("consume_gateway_call", {
     target_workspace_id: workspaceId,
     target_api_key_id: apiKeyId,
   });
   if (error || usage === null) {
     console.error("MockAgent: workspace usage check failed", error?.message);
-    return NextResponse.json(
+    return Response.json(
       {
         error_code: "WORKSPACE_USAGE_UNAVAILABLE",
         error_class: "TRANSIENT",
@@ -91,7 +90,7 @@ export async function enforceWorkspaceQuota(
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const nextMonth = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
     const retryAfter = Math.max(1, Math.ceil((nextMonth.getTime() - Date.now()) / 1000));
-    return NextResponse.json(
+    return Response.json(
       {
         error_code: "MONTHLY_QUOTA_EXCEEDED",
         error_class: "TRANSIENT",
@@ -105,7 +104,7 @@ export async function enforceWorkspaceQuota(
   return null;
 }
 
-export async function enforceClientRateLimit(request: NextRequest): Promise<NextResponse | null> {
+export async function enforceClientRateLimit(request: Request): Promise<Response | null> {
   if (!isGatewayRateLimitConfigured()) {
     return process.env.NODE_ENV === "production" ? rateLimitUnavailable() : null;
   }
@@ -125,9 +124,12 @@ export async function enforceClientRateLimit(request: NextRequest): Promise<Next
   }
 }
 
-export async function enforceToolRateLimit(toolId: string): Promise<NextResponse | null> {
+export async function enforceToolRateLimit(
+  toolId: string,
+  rateLimit = checkGatewayRateLimit
+): Promise<Response | null> {
   try {
-    const result = await checkGatewayRateLimit("tool", toolId);
+    const result = await rateLimit("tool", toolId);
     return result.success ? null : rateLimitExceeded(result);
   } catch (error) {
     console.error("MockAgent: gateway tool rate-limit check failed", error);
@@ -136,7 +138,7 @@ export async function enforceToolRateLimit(toolId: string): Promise<NextResponse
 }
 
 function rateLimitUnavailable() {
-  return NextResponse.json(
+  return Response.json(
     {
       error_code: "RATE_LIMITER_UNAVAILABLE",
       error_class: "TRANSIENT",
@@ -150,7 +152,7 @@ function rateLimitUnavailable() {
 
 function rateLimitExceeded(result: Awaited<ReturnType<typeof checkGatewayRateLimit>>) {
   const retryAfter = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
-  return NextResponse.json(
+  return Response.json(
     {
       error_code: "RATE_LIMIT_EXCEEDED",
       error_class: "TRANSIENT",

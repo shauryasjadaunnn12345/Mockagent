@@ -140,7 +140,20 @@ export function EditToolDialog({ tool }: EditToolDialogProps) {
             <ScenarioEditor name="scenarios" idPrefix={`tool-${tool.id}-scenarios`} value={tool.scenarios} />
             <div className="space-y-1.5">
               <Label htmlFor={`tool-assertions-${tool.id}`}>Run &amp; final-answer assertions</Label>
-              <Textarea id={`tool-assertions-${tool.id}`} name="finalAnswerAssertions" defaultValue={JSON.stringify(tool.final_answer_assertions, null, 2)} rows={5} required />
+              <Textarea
+                id={`tool-assertions-${tool.id}`}
+                name="finalAnswerAssertions"
+                defaultValue={JSON.stringify(tool.final_answer_assertions, null, 2)}
+                placeholder={`[
+  { "name": "Require refund confirmation", "type": "call_guard", "path": "/confirmed", "operator": "equals", "value": true, "message": "Refunds require explicit confirmation." },
+  { "name": "Refund amount ceiling", "type": "call_guard", "path": "/amount", "operator": "lte", "value": 500, "message": "Refund amount exceeds the configured limit." }
+]`}
+                rows={7}
+                required
+              />
+              <p className="text-xs text-slate-500">
+                <code>call_guard</code> rules block unsafe arguments before the mock executes and record a policy violation. JSON Pointer paths support <code>exists</code>, <code>equals</code>, <code>not_equals</code>, <code>lte</code>, and <code>gte</code>.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor={`tool-semantic-${tool.id}`}>Semantic QA criteria</Label>

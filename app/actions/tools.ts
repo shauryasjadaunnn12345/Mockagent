@@ -8,6 +8,13 @@ import type { Json } from "@/types/database";
 import { createHash, randomBytes } from "node:crypto";
 import { effectiveWorkspacePlan, PLAN_LIMITS } from "@/lib/billing";
 import { parseToolConfiguration, type ToolConfigurationInput } from "@/lib/tool-definition";
+import { createOpenMcpToken } from "@/lib/mcp-auth";
+import {
+  prepareImportedToolConfigurations,
+  previewToolImport,
+  type ImportedTool,
+  type ToolImportFormat,
+} from "@/lib/tool-import";
 
 export interface CreateToolInput {
   name: string;
@@ -23,6 +30,111 @@ export interface CreateToolInput {
 export interface ActionResult {
   success: boolean;
   error?: string;
+}
+
+export async function previewToolImportAction(
+  format: ToolImportFormat,
+  source: string
+): Promise<{ success: true; tools: ImportedTool[] } | { success: false; error: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "You must be signed in to import tools." };
+  try {
+    return { success: true, tools: previewToolImport(format, source) };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Could not preview this import.",
+    };
+  }
+}
+
+export async function createImportedTools(
+  format: ToolImportFormat,
+  source: string,
+  selectedNames: string[]
+): Promise<{ success: true; count: number } | { success: false; error: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "You must be signed in." };
+
+  let importedTools: ImportedTool[];
+  try {
+    importedTools = prepareImportedToolConfigurations(format, source, selectedNames);
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Could not import these tools.",
+    };
+  }
+  const { data: settings, error: settingsError } = await supabase
+    .from("user_settings")
+    .select("current_workspace_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const workspaceId = settings?.current_workspace_id;
+  if (settingsError || !workspaceId) {
+    return { success: false, error: "Could not resolve the active workspace." };
+  }
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!membership) return { success: false, error: "You are not a member of the active workspace." };
+
+  const { data: workspace, error: workspaceError } = await supabase
+    .from("workspaces")
+    .select("plan,subscription_status")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (workspaceError || !workspace) {
+    return { success: false, error: "Could not load the active workspace plan." };
+  }
+  const plan = effectiveWorkspacePlan(workspace.plan, workspace.subscription_status);
+  const { count, error: countError } = await supabase
+    .from("tools")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId);
+  if (countError || count === null) {
+    return { success: false, error: "Could not check the workspace tool limit." };
+  }
+  const remaining = PLAN_LIMITS[plan].tools - count;
+  if (importedTools.length > remaining) {
+    return {
+      success: false,
+      error: `This import selects ${importedTools.length} tools, but the ${plan} plan has room for only ${Math.max(0, remaining)} more.`,
+    };
+  }
+
+  const admin = createAdminClient();
+  const { error: insertError } = await admin.from("tools").insert(
+    importedTools.map((tool) => ({
+      user_id: user.id,
+      workspace_id: workspaceId,
+      name: tool.name,
+      description: tool.description || null,
+      json_schema: tool.jsonSchema as Json,
+      mock_response: tool.mockResponse as Json,
+      scenarios: tool.scenarios as unknown as Json,
+      final_answer_assertions: [],
+      semantic_criteria: null,
+      require_api_key: false,
+    }))
+  );
+  if (insertError) {
+    console.error("MockAgent: failed to create imported tools", insertError.message);
+    return {
+      success: false,
+      error: insertError.message.includes("Workspace tool limit")
+        ? "The workspace tool limit was reached before this import could finish."
+        : "Could not create the imported tools. Check the names and try again.",
+    };
+  }
+
+  revalidatePath("/dashboard");
+  return { success: true, count: importedTools.length };
 }
 
 export async function createTool(input: CreateToolInput): Promise<ActionResult> {
@@ -412,6 +524,152 @@ export async function revokeApiKey(keyId: string): Promise<ActionResult> {
     .is("revoked_at", null);
 
   if (error) return { success: false, error: error.message };
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+
+export async function createToolset(
+  name: string,
+  toolIds: string[]
+): Promise<{ success: true; slug: string } | { success: false; error: string }> {
+  const normalizedName = name.trim();
+  if (!normalizedName || normalizedName.length > 80) {
+    return { success: false, error: "Toolset name must be between 1 and 80 characters." };
+  }
+  const uniqueToolIds = [...new Set(toolIds)];
+  if (uniqueToolIds.length === 0 || uniqueToolIds.length > 250) {
+    return { success: false, error: "Select between 1 and 250 tools." };
+  }
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "You must be signed in." };
+  const { data: settings, error: settingsError } = await supabase
+    .from("user_settings")
+    .select("current_workspace_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const workspaceId = settings?.current_workspace_id;
+  if (settingsError || !workspaceId) {
+    return { success: false, error: "Could not resolve the active workspace." };
+  }
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!membership) return { success: false, error: "You are not a member of the active workspace." };
+
+  const { data: tools, error: toolsError } = await supabase
+    .from("tools")
+    .select("id,name")
+    .eq("workspace_id", workspaceId)
+    .in("id", uniqueToolIds);
+  if (toolsError || tools?.length !== uniqueToolIds.length) {
+    return { success: false, error: "Every selected tool must belong to the active workspace." };
+  }
+  if (new Set(tools.map((tool) => tool.name)).size !== tools.length) {
+    return { success: false, error: "A toolset cannot contain tools with duplicate names." };
+  }
+
+  const slugBase = normalizedName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48) || "toolset";
+  const slug = `${slugBase}-${randomBytes(4).toString("hex")}`;
+  const { data: toolset, error: toolsetError } = await supabase
+    .from("toolsets")
+    .insert({
+      workspace_id: workspaceId,
+      user_id: user.id,
+      name: normalizedName,
+      slug,
+    })
+    .select("id,slug")
+    .single();
+  if (toolsetError || !toolset) {
+    console.error("MockAgent: failed to create toolset", toolsetError?.message);
+    return { success: false, error: "Could not create the toolset. Please try again." };
+  }
+
+  const { error: membersError } = await supabase.from("toolset_tools").insert(
+    uniqueToolIds.map((toolId, position) => ({
+      toolset_id: toolset.id,
+      tool_id: toolId,
+      workspace_id: workspaceId,
+      position,
+    }))
+  );
+  if (membersError) {
+    const { error: cleanupError } = await supabase.from("toolsets").delete().eq("id", toolset.id);
+    if (cleanupError) {
+      console.error("MockAgent: failed to clean up incomplete toolset", cleanupError.message);
+    }
+    return { success: false, error: "Could not add the selected tools to the toolset." };
+  }
+  revalidatePath("/dashboard");
+  return { success: true, slug: toolset.slug };
+}
+
+export async function setToolsetAuthMode(
+  toolsetId: string,
+  accessMode: "api_key" | "open"
+): Promise<{ success: true; token?: string } | { success: false; error: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "You must be signed in." };
+  const { data: settings, error: settingsError } = await supabase
+    .from("user_settings")
+    .select("current_workspace_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (settingsError || !settings?.current_workspace_id) {
+    return { success: false, error: "Could not resolve the active workspace." };
+  }
+
+  const openToken = accessMode === "open" ? createOpenMcpToken() : null;
+  const { data, error } = await supabase
+    .from("toolsets")
+    .update({
+      access_mode: accessMode,
+      open_token_hash: openToken?.hash ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", toolsetId)
+    .eq("workspace_id", settings.current_workspace_id)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    console.error("MockAgent: failed to update toolset authentication", error?.message);
+    return { success: false, error: "Could not update toolset authentication." };
+  }
+  revalidatePath("/dashboard");
+  return { success: true, ...(openToken ? { token: openToken.token } : {}) };
+}
+
+export async function deleteToolset(toolsetId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "You must be signed in." };
+  const { data: settings, error: settingsError } = await supabase
+    .from("user_settings")
+    .select("current_workspace_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (settingsError || !settings?.current_workspace_id) {
+    return { success: false, error: "Could not resolve the active workspace." };
+  }
+  const { error } = await supabase
+    .from("toolsets")
+    .delete()
+    .eq("id", toolsetId)
+    .eq("workspace_id", settings.current_workspace_id);
+  if (error) {
+    console.error("MockAgent: failed to delete toolset", error.message);
+    return { success: false, error: "Could not delete the toolset." };
+  }
   revalidatePath("/dashboard");
   return { success: true };
 }

@@ -1,0 +1,142 @@
+name: MockAgent PR feedback
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: mockagent-pr-feedback-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  feedback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the trusted base revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check hosted regression configuration
+        id: config
+        env:
+          MOCKAGENT_BASE_URL: ${{ secrets.MOCKAGENT_BASE_URL }}
+          MOCKAGENT_API_KEY: ${{ secrets.MOCKAGENT_API_KEY }}
+        run: |
+          if [ -n "$MOCKAGENT_BASE_URL" ] && [ -n "$MOCKAGENT_API_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run saved MockAgent regression suites
+        id: regression
+        if: steps.config.outputs.configured == 'true'
+        env:
+          MOCKAGENT_BASE_URL: ${{ secrets.MOCKAGENT_BASE_URL }}
+          MOCKAGENT_API_KEY: ${{ secrets.MOCKAGENT_API_KEY }}
+          MOCKAGENT_SUITE_IDS: ${{ vars.MOCKAGENT_SUITE_IDS }}
+          MOCKAGENT_RESULT_FILE: ${{ runner.temp }}/mockagent-regression-results.json
+        run: node scripts/mockagent-ci.mjs
+
+      - name: Update pull request feedback
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          MOCKAGENT_CONFIGURED: ${{ steps.config.outputs.configured }}
+          MOCKAGENT_RESULT_FILE: ${{ runner.temp }}/mockagent-regression-results.json
+        with:
+          script: |
+            const fs = require("node:fs");
+            const marker = "<!-- mockagent-pr-feedback -->";
+            const pullNumber = context.payload.pull_request.number;
+            const safe = (value, limit = 300) => String(value ?? "")
+              .replace(/[\r\n\t]/g, " ")
+              .replaceAll("|", "\\|")
+              .replaceAll("`", "\\`")
+              .replace(/[<>]/g, "")
+              .slice(0, limit);
+
+            const changedFiles = await github.paginate(
+              github.rest.pulls.listFiles,
+              { owner: context.repo.owner, repo: context.repo.repo, pull_number: pullNumber, per_page: 100 },
+            );
+            const visibleFiles = changedFiles.slice(0, 40);
+            const fileRows = visibleFiles.map((file) => `- \`${safe(file.filename, 200)}\``);
+            if (changedFiles.length > visibleFiles.length) {
+              fileRows.push(`- …and ${changedFiles.length - visibleFiles.length} more`);
+            }
+
+            let report;
+            if (process.env.MOCKAGENT_CONFIGURED === "true") {
+              try {
+                report = JSON.parse(fs.readFileSync(process.env.MOCKAGENT_RESULT_FILE, "utf8"));
+              } catch {
+                report = { status: "error", error: "The regression runner did not produce a result report.", results: [] };
+              }
+            }
+
+            let outcome;
+            let suiteTable;
+            if (process.env.MOCKAGENT_CONFIGURED !== "true") {
+              outcome = "⚠️ Not configured";
+              suiteTable = "Hosted suites were not run. Configure the `MOCKAGENT_BASE_URL` and `MOCKAGENT_API_KEY` repository secrets to enable them.";
+            } else {
+              const status = report?.status;
+              outcome = status === "passed" ? "✅ Passed" : status === "failed" ? "❌ Failed" : "⚠️ Error";
+              const cases = Array.isArray(report?.results) ? report.results : [];
+              const rows = cases.slice(0, 100).map((result) =>
+                `| ${result.passed ? "PASS" : "FAIL"} | ${safe(result.label)} | ${safe(result.detail)} |`
+              );
+              if (cases.length > rows.length) {
+                rows.push(`| … | ${cases.length - rows.length} more cases | See workflow run |`);
+              }
+              suiteTable = cases.length
+                ? ["| Result | Saved test case | Failed checks / error |", "|---|---|---|", ...rows].join("\n")
+                : safe(report?.error || "No case results were produced.");
+            }
+
+            const body = [
+              marker,
+              "## MockAgent regression feedback",
+              "",
+              `**Saved suite status:** ${outcome}`,
+              "",
+              suiteTable,
+              "",
+              "This runs saved suites against the configured MockAgent workspace. The regular CI workflow separately runs this pull request's tests, lint, and build.",
+              "",
+              `**Changed files (${changedFiles.length}):**`,
+              ...(fileRows.length ? fileRows : ["- No changed files reported."]),
+              "",
+              `[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+            ].join("\n");
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner: context.repo.owner, repo: context.repo.repo, issue_number: pullNumber, per_page: 100 },
+            );
+            const existing = comments.find((comment) =>
+              comment.user?.login === "github-actions[bot]" && comment.body?.includes(marker)
+            );
+            const parameters = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pullNumber,
+              body,
+            };
+            if (existing) {
+              await github.rest.issues.updateComment({ ...parameters, comment_id: existing.id });
+            } else {
+              await github.rest.issues.createComment(parameters);
+            }

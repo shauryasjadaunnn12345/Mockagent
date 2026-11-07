@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { appendFile, writeFile } from "node:fs/promises";
+
 const baseUrl = process.env.MOCKAGENT_BASE_URL?.trim()?.replace(/\/+$/, "");
 const apiKey = process.env.MOCKAGENT_API_KEY?.trim();
 const requestedSuiteIds = new Set(
@@ -56,6 +58,16 @@ async function request(path, options) {
 let failedCases = 0;
 let passedCases = 0;
 const results = [];
+let runnerError;
+
+function safeText(value) {
+  return String(value)
+    .replaceAll(apiKey, "[REDACTED]")
+    .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/\b(?:ma_live_|(?:sk|pk|ghp|gho|github_pat|xox[baprs])_)[A-Za-z0-9_-]{12,}\b/gi, "[REDACTED]")
+    .replace(/[\r\n\t]/g, " ")
+    .slice(0, 500);
+}
 
 try {
   const listing = await request("/api/ci/suites", { method: "GET" });
@@ -94,28 +106,45 @@ try {
         }
         const failed = regression.checks.filter((check) => check && check.passed === false);
         const detail = failed.map((check) => check.name).join("; ");
-        results.push({ label, passed: regression.passed, detail });
+        results.push({ label: safeText(label), passed: regression.passed, detail: safeText(detail) });
         if (regression.passed) {
           passedCases += 1;
-          console.log(`PASS ${label}`);
+          console.log(`PASS ${safeText(label)}`);
         } else {
           failedCases += 1;
-          console.error(`FAIL ${label}${detail ? ` — ${detail}` : ""}`);
+          console.error(`FAIL ${safeText(label)}${detail ? ` — ${safeText(detail)}` : ""}`);
         }
       } catch (error) {
         failedCases += 1;
-        const detail = error instanceof Error ? error.message : "Regression request failed.";
-        results.push({ label, passed: false, detail });
-        console.error(`ERROR ${label} — ${detail}`);
+        const detail = safeText(error instanceof Error ? error.message : "Regression request failed.");
+        results.push({ label: safeText(label), passed: false, detail });
+        console.error(`ERROR ${safeText(label)} — ${detail}`);
       }
     }
   }
 } catch (error) {
-  console.error(error instanceof Error ? error.message : "MockAgent CI run failed.");
-  process.exit(2);
+  runnerError = safeText(error instanceof Error ? error.message : "MockAgent CI run failed.");
+  console.error(runnerError);
 }
 
 console.log(`MockAgent regression results: ${passedCases} passed, ${failedCases} failed.`);
+
+const report = {
+  status: runnerError ? "error" : failedCases ? "failed" : "passed",
+  passedCases,
+  failedCases,
+  error: runnerError ?? null,
+  results,
+};
+
+if (process.env.MOCKAGENT_RESULT_FILE) {
+  try {
+    await writeFile(process.env.MOCKAGENT_RESULT_FILE, JSON.stringify(report), "utf8");
+  } catch (error) {
+    console.error("Could not write MockAgent regression results:", error);
+    process.exitCode = 2;
+  }
+}
 
 if (process.env.GITHUB_STEP_SUMMARY) {
   const rows = results.map(({ label, passed, detail }) =>
@@ -125,6 +154,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     "## MockAgent regression results",
     "",
     `**${passedCases} passed · ${failedCases} failed**`,
+    ...(runnerError ? ["", `**Runner error:** ${runnerError.replaceAll("|", "\\|")}`] : []),
     "",
     "| Result | Test case | Failed checks / error |",
     "|---|---|---|",
@@ -132,7 +162,6 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     "",
   ].join("\n");
   try {
-    const { appendFile } = await import("node:fs/promises");
     await appendFile(process.env.GITHUB_STEP_SUMMARY, summary, "utf8");
   } catch (error) {
     console.error("Could not write GitHub Actions step summary:", error);
@@ -140,4 +169,5 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   }
 }
 
-if (failedCases > 0) process.exitCode = 1;
+if (runnerError) process.exitCode = 2;
+else if (failedCases > 0) process.exitCode = 1;

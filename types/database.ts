@@ -18,6 +18,8 @@ export type Database = {
         Row: {
           created_at: string
           api_key_id: string | null
+          jsonrpc_method: string | null
+          mcp_tool_name: string | null
           workspace_id: string
           error_details: Json | null
           failure_fingerprint: string | null
@@ -30,12 +32,17 @@ export type Database = {
           scenario_index: number | null
           scenario_step: number | null
           run_id: string | null
-          tool_id: string
+          tool_id: string | null
+          toolset_id: string | null
+          traceparent: string | null
+          transport: string
           user_id: string
         }
         Insert: {
           created_at?: string
           api_key_id?: string | null
+          jsonrpc_method?: string | null
+          mcp_tool_name?: string | null
           workspace_id: string
           error_details?: Json | null
           failure_fingerprint?: string | null
@@ -48,12 +55,17 @@ export type Database = {
           scenario_index?: number | null
           scenario_step?: number | null
           run_id?: string | null
-          tool_id: string
+          tool_id?: string | null
+          toolset_id?: string | null
+          traceparent?: string | null
+          transport?: string
           user_id: string
         }
         Update: {
           created_at?: string
           api_key_id?: string | null
+          jsonrpc_method?: string | null
+          mcp_tool_name?: string | null
           workspace_id?: string
           error_details?: Json | null
           failure_fingerprint?: string | null
@@ -66,7 +78,10 @@ export type Database = {
           scenario_index?: number | null
           scenario_step?: number | null
           run_id?: string | null
-          tool_id?: string
+          tool_id?: string | null
+          toolset_id?: string | null
+          traceparent?: string | null
+          transport?: string
           user_id?: string
         }
         Relationships: [
@@ -178,6 +193,69 @@ export type Database = {
           semantic_criteria?: string | null
           updated_at?: string
           user_id?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
+      toolsets: {
+        Row: {
+          access_mode: string
+          created_at: string
+          id: string
+          is_public: boolean
+          name: string
+          open_token_hash: string | null
+          slug: string
+          updated_at: string
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          access_mode?: string
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          name: string
+          open_token_hash?: string | null
+          slug: string
+          updated_at?: string
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          access_mode?: string
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          name?: string
+          open_token_hash?: string | null
+          slug?: string
+          updated_at?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
+      toolset_tools: {
+        Row: {
+          created_at: string
+          position: number
+          tool_id: string
+          toolset_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          position: number
+          tool_id: string
+          toolset_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          position?: number
+          tool_id?: string
+          toolset_id?: string
           workspace_id?: string
         }
         Relationships: []
@@ -434,6 +512,7 @@ export type Database = {
           id: string
           log_retention_days: number
           name: string
+          slug: string
           plan: string
           dodo_customer_id: string | null
           dodo_environment: string | null
@@ -447,6 +526,7 @@ export type Database = {
           id?: string
           log_retention_days?: number
           name: string
+          slug?: string
           plan?: string
           dodo_customer_id?: string | null
           dodo_environment?: string | null
@@ -460,6 +540,7 @@ export type Database = {
           id?: string
           log_retention_days?: number
           name?: string
+          slug?: string
           plan?: string
           dodo_customer_id?: string | null
           dodo_environment?: string | null
@@ -669,7 +750,7 @@ export const Constants = {
   },
 } as const
 
-export type ExecutionStatus = "SUCCESS" | "SCHEMA_VIOLATION" | "INJECTED_FAILURE";
+export type ExecutionStatus = "SUCCESS" | "SCHEMA_VIOLATION" | "INJECTED_FAILURE" | "POLICY_VIOLATION";
 export type Tool = Tables<"tools">;
 export type ToolInsert = TablesInsert<"tools">;
 export type LogEntry = Tables<"logs">;

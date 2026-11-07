@@ -1,6 +1,14 @@
 export type FinalAnswerAssertion =
   | {
       name: string;
+      type: "call_guard";
+      path: string;
+      operator: "exists" | "equals" | "not_equals" | "lte" | "gte";
+      value?: string | number | boolean | null;
+      message: string;
+    }
+  | {
+      name: string;
       type: "contains";
       text: string;
       case_sensitive?: boolean;
@@ -26,7 +34,7 @@ export type FinalAnswerAssertion =
 
 export interface FinalAnswerAssertionResult {
   name: string;
-  type: FinalAnswerAssertion["type"];
+  type: Exclude<FinalAnswerAssertion["type"], "call_guard">;
   passed: boolean;
   detail: string;
 }
@@ -54,6 +62,48 @@ export function parseFinalAnswerAssertions(value: unknown): FinalAnswerAssertion
 
     if (candidate.case_sensitive !== undefined && typeof candidate.case_sensitive !== "boolean") {
       throw new Error(`Assertion ${index + 1} case_sensitive must be a boolean.`);
+    }
+
+    if (candidate.type === "call_guard") {
+      if (
+        typeof candidate.path !== "string" ||
+        !candidate.path.startsWith("/") ||
+        candidate.path.length > 256 ||
+        candidate.path.split("/").length > 21 ||
+        candidate.path.split("/").some((part) => /~(?![01])/.test(part))
+      ) {
+        throw new Error(`Assertion ${index + 1} call_guard path must be a valid JSON Pointer of at most 20 segments.`);
+      }
+      if (!["exists", "equals", "not_equals", "lte", "gte"].includes(String(candidate.operator))) {
+        throw new Error(`Assertion ${index + 1} call_guard has an unsupported operator.`);
+      }
+      if (
+        candidate.operator !== "exists" &&
+        (candidate.value === undefined ||
+          (typeof candidate.value !== "string" &&
+            typeof candidate.value !== "number" &&
+            typeof candidate.value !== "boolean" &&
+            candidate.value !== null))
+      ) {
+        throw new Error(`Assertion ${index + 1} call_guard needs a scalar value.`);
+      }
+      if (
+        (candidate.operator === "lte" || candidate.operator === "gte") &&
+        (typeof candidate.value !== "number" || !Number.isFinite(candidate.value))
+      ) {
+        throw new Error(`Assertion ${index + 1} numeric call_guard needs a finite number value.`);
+      }
+      if (!isNonEmptyText(candidate.message)) {
+        throw new Error(`Assertion ${index + 1} call_guard needs a message of at most 500 characters.`);
+      }
+      return {
+        name,
+        type: "call_guard",
+        path: candidate.path,
+        operator: candidate.operator as "exists" | "equals" | "not_equals" | "lte" | "gte",
+        ...(candidate.operator === "exists" ? {} : { value: candidate.value as string | number | boolean | null }),
+        message: candidate.message.trim(),
+      };
     }
 
     if (candidate.type === "contains" || candidate.type === "not_contains") {
@@ -109,7 +159,7 @@ export function evaluateFinalAnswer(
   answer: string,
   toolCalls: string[] = []
 ): FinalAnswerAssertionResult[] {
-  return assertions.map((assertion) => {
+  return assertions.filter((assertion) => assertion.type !== "call_guard").map((assertion) => {
     if (assertion.type === "tool_sequence") {
       const passed =
         assertion.tools.length === toolCalls.length &&
@@ -161,6 +211,46 @@ export function evaluateFinalAnswer(
       detail: passed
         ? "Required text appeared in the requested order."
         : `Expected "${assertion.first}" before "${assertion.then}".`,
+    };
+  });
+}
+
+export interface CallGuardResult {
+  name: string;
+  path: string;
+  passed: boolean;
+  message: string;
+}
+
+export function evaluateCallGuards(
+  assertions: FinalAnswerAssertion[],
+  argumentsValue: unknown
+): CallGuardResult[] {
+  return assertions.filter((assertion) => assertion.type === "call_guard").map((assertion) => {
+    let value: unknown = argumentsValue;
+    for (const rawSegment of assertion.path.slice(1).split("/")) {
+      const segment = rawSegment.replace(/~1/g, "/").replace(/~0/g, "~");
+      if (!value || typeof value !== "object" || !(segment in value)) {
+        value = undefined;
+        break;
+      }
+      value = (value as Record<string, unknown>)[segment];
+    }
+    const exists = value !== undefined;
+    const passed = assertion.operator === "exists"
+      ? exists
+      : assertion.operator === "equals"
+        ? Object.is(value, assertion.value)
+        : assertion.operator === "not_equals"
+          ? !Object.is(value, assertion.value)
+          : assertion.operator === "lte"
+            ? typeof value === "number" && value <= (assertion.value as number)
+            : typeof value === "number" && value >= (assertion.value as number);
+    return {
+      name: assertion.name,
+      path: assertion.path,
+      passed,
+      message: assertion.message,
     };
   });
 }

@@ -7,33 +7,14 @@ import {
   enforceToolRateLimit,
   enforceWorkspaceQuota,
 } from "@/lib/gateway-guards";
-import { validateAgainstSchema } from "@/lib/validators";
 import { assertRunToolSnapshotBundle } from "@/lib/run-snapshots";
-import {
-  parseScenarios,
-  resolveScenario,
-  resolveScenarioResponse,
-  resolveScenarioStep,
-} from "@/lib/scenarios";
-import type { ExecutionStatus, Json } from "@/types/database";
+import { executeMockTool } from "@/lib/mock-execution";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 interface RouteParams {
   params: Promise<{ toolId: string }>;
-}
-
-function normalizeJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(normalizeJson);
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, normalizeJson((value as Record<string, unknown>)[key])])
-    );
-  }
-  return value;
 }
 
 /**
@@ -102,7 +83,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const { data: tool, error: toolError } = await supabase
     .from("tools")
-    .select("id, user_id, workspace_id, name, json_schema, mock_response, scenarios, is_active, require_api_key")
+    .select("id, user_id, workspace_id, name, json_schema, mock_response, scenarios, final_answer_assertions, is_active, require_api_key")
     .eq("id", toolId)
     .maybeSingle();
 
@@ -162,11 +143,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     json_schema: unknown;
     mock_response: unknown;
     scenarios: unknown;
+    final_answer_assertions: unknown;
   } = {
     name: tool.name,
     json_schema: tool.json_schema,
     mock_response: tool.mock_response,
     scenarios: tool.scenarios,
+    final_answer_assertions: tool.final_answer_assertions,
   };
   const snapshotToken = request.headers.get("x-mockagent-config-token");
   if (snapshotToken) {
@@ -209,6 +192,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         json_schema: savedTool.json_schema,
         mock_response: savedTool.mock_response,
         scenarios: savedTool.scenarios,
+        final_answer_assertions: savedTool.final_answer_assertions,
       };
     } catch (error) {
       console.error(
@@ -222,95 +206,58 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
   }
 
-  const { valid, errors } = validateAgainstSchema(
-    toolConfiguration.json_schema as Record<string, unknown>,
-    payload
-  );
-  const errorClass = valid
-    ? null
-    : errors?.some((validationError) => validationError.keyword === "invalidSchema")
-      ? "PERMANENT"
-      : "VALIDATION";
-  const errorCode = errorClass === "PERMANENT"
-    ? "TOOL_SCHEMA_INVALID"
-    : "SCHEMA_VALIDATION_FAILED";
-  const failureFingerprint = valid
-    ? null
-    : createHash("sha256")
-        .update(`${tool.id}:${errorClass}:${JSON.stringify(normalizeJson(payload))}`)
-        .digest("hex");
-  let priorIdenticalFailures = 0;
-
-  if (!valid && runId && failureFingerprint) {
-    const { count, error } = await supabase
-      .from("logs")
-      .select("id", { count: "exact", head: true })
-      .eq("tool_id", tool.id)
-      .eq("run_id", runId)
-      .eq("failure_fingerprint", failureFingerprint)
-      .eq("status", "SCHEMA_VIOLATION");
-
-    if (error) {
-      console.error("MockAgent: failed to check repeated validation failure", error.message);
-      return NextResponse.json(
-        {
-          error_code: "FAILURE_HISTORY_UNAVAILABLE",
-          error_class: "TRANSIENT",
-          message: "Could not check this run's prior validation failures.",
-          retryable: true,
-          retry_after_seconds: 1,
-        },
-        { status: 503, headers: { "Retry-After": "1" } }
-      );
-    }
-    priorIdenticalFailures = count ?? 0;
+  const execution = await executeMockTool({
+    supabase,
+    tool: {
+      id: tool.id,
+      user_id: tool.user_id,
+      workspace_id: tool.workspace_id,
+      name: toolConfiguration.name,
+      json_schema: toolConfiguration.json_schema,
+      mock_response: toolConfiguration.mock_response,
+      scenarios: toolConfiguration.scenarios,
+      final_answer_assertions: toolConfiguration.final_answer_assertions,
+    },
+    arguments: payload,
+    runId,
+    apiKeyId: apiKeyCheck.apiKeyId,
+    startedAt,
+  });
+  if (execution.gatewayError) {
+    return NextResponse.json(
+      {
+        error_code: execution.gatewayError.code,
+        error_class: "TRANSIENT",
+        error: execution.gatewayError.message,
+        retryable: true,
+        retry_after_seconds: 1,
+      },
+      { status: execution.gatewayError.status, headers: { "Retry-After": "1" } }
+    );
   }
-
-  const scenarios = valid ? parseScenarios(toolConfiguration.scenarios) : [];
-  const scenario = valid ? resolveScenario(scenarios, payload) : null;
-  const scenarioIndex = scenario ? scenarios.indexOf(scenario) : null;
-  let scenarioAttempt: number | null = null;
-  let scenarioStep: number | null = null;
-  let injectedFailure: ReturnType<typeof resolveScenarioStep>["failure"] = null;
-
-  if (scenario?.responses || scenario?.failures?.length) {
-    let priorCalls = 0;
-    if (runId && scenarioIndex !== null) {
-      const { count, error } = await supabase
-        .from("logs")
-        .select("id", { count: "exact", head: true })
-        .eq("tool_id", tool.id)
-        .eq("run_id", runId)
-        .eq("scenario_index", scenarioIndex);
-
-      if (error) {
-        console.error("MockAgent: failed to load scenario sequence state", error.message);
-        return NextResponse.json(
-          {
-            error_code: "SCENARIO_STATE_UNAVAILABLE",
-            error_class: "TRANSIENT",
-            error: "Could not load scenario sequence state.",
-            retryable: true,
-            retry_after_seconds: 1,
-          },
-          { status: 503, headers: { "Retry-After": "1" } }
-        );
-      }
-      priorCalls = count ?? 0;
-    }
-    const resolvedStep = resolveScenarioStep(scenario, priorCalls);
-    scenarioAttempt = resolvedStep.attempt;
-    scenarioStep = resolvedStep.responseStep;
-    injectedFailure = resolvedStep.failure;
+  const {
+    valid,
+    errors,
+    errorClass,
+    errorCode,
+    failureFingerprint,
+    responseBody,
+    latencyMs,
+    scenarioName,
+    scenarioStep,
+    injectedFailure,
+    repeatedFailureCount,
+  } = execution;
+  if (execution.policyViolations.length > 0) {
+    return NextResponse.json(responseBody, {
+      status: 403,
+      headers: {
+        "x-mockagent-status": "POLICY_VIOLATION",
+        ...(runId ? { "x-mockagent-run-id": runId } : {}),
+        "x-mockagent-latency-ms": String(latencyMs),
+      },
+    });
   }
-
-  const loggedScenarioStep = injectedFailure ? scenarioAttempt : scenarioStep;
-  const latencyMs = Math.round(performance.now() - startedAt);
-  const status: ExecutionStatus = !valid
-    ? "SCHEMA_VIOLATION"
-    : injectedFailure
-      ? "INJECTED_FAILURE"
-      : "SUCCESS";
   const failureBody = injectedFailure
     ? {
         status: "INJECTED_FAILURE",
@@ -323,51 +270,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           : { retry_after_seconds: injectedFailure.retryAfterSeconds }),
       }
     : null;
-  const responseBody = valid
-    ? scenario
-      ? injectedFailure
-        ? failureBody
-        : resolveScenarioResponse(scenario, scenarioStep ?? 1)
-      : toolConfiguration.mock_response
-    : null;
-
-  // Fire-and-forget-ish logging — we still await it so latency_ms in the log
-  // reflects real gateway time, but a logging failure never blocks the
-  // agent's response.
-  const { error: logError } = await supabase.from("logs").insert({
-    tool_id: tool.id,
-    user_id: tool.user_id,
-    payload: (payload ?? {}) as Json,
-    workspace_id: tool.workspace_id,
-    response_body: responseBody as Json | null,
-    api_key_id: apiKeyCheck.apiKeyId,
-    status,
-    scenario_name: scenario?.name ?? null,
-    scenario_index: scenarioIndex,
-    scenario_step: loggedScenarioStep,
-    run_id: runId,
-    failure_fingerprint: failureFingerprint,
-    error_details: valid
-      ? injectedFailure
-        ? (failureBody as Json)
-        : null
-      : (JSON.parse(
-          JSON.stringify({
-            error_code: errorCode,
-            error_class: errorClass,
-            failure_fingerprint: failureFingerprint,
-            errors,
-          })
-        ) as Json),
-    latency_ms: latencyMs,
-  });
-
-  if (logError) {
-    console.error("MockAgent: failed to write execution log", logError.message);
-  }
 
   if (!valid) {
-    const repeatedFailure = errorClass !== "PERMANENT" && priorIdenticalFailures > 0;
+    const repeatedFailure = errorClass !== "PERMANENT" && repeatedFailureCount > 0;
     const retryable = errorClass === "VALIDATION" && !repeatedFailure;
     return NextResponse.json(
       {
@@ -389,7 +294,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         errors,
         failure_fingerprint: failureFingerprint,
         retryable,
-        ...(runId ? { identical_failure_count: priorIdenticalFailures + 1 } : {}),
+        ...(runId ? { identical_failure_count: repeatedFailureCount + 1 } : {}),
         latency_ms: latencyMs,
       },
       { status: errorClass === "PERMANENT" ? 500 : repeatedFailure ? 409 : 400 }
@@ -401,8 +306,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       status: injectedFailure.status,
       headers: {
         "x-mockagent-status": "INJECTED_FAILURE",
-        ...(scenario ? { "x-mockagent-scenario": scenario.name } : {}),
-        ...(loggedScenarioStep !== null ? { "x-mockagent-scenario-step": String(loggedScenarioStep) } : {}),
+        ...(scenarioName ? { "x-mockagent-scenario": scenarioName } : {}),
+        ...(scenarioStep !== null ? { "x-mockagent-scenario-step": String(scenarioStep) } : {}),
         ...(runId ? { "x-mockagent-run-id": runId } : {}),
         ...(injectedFailure.retryAfterSeconds === undefined
           ? {}
@@ -416,8 +321,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     status: 200,
     headers: {
       "x-mockagent-status": "SUCCESS",
-      ...(scenario ? { "x-mockagent-scenario": scenario.name } : {}),
-      ...(loggedScenarioStep !== null ? { "x-mockagent-scenario-step": String(loggedScenarioStep) } : {}),
+      ...(scenarioName ? { "x-mockagent-scenario": scenarioName } : {}),
+      ...(scenarioStep !== null ? { "x-mockagent-scenario-step": String(scenarioStep) } : {}),
       ...(runId ? { "x-mockagent-run-id": runId } : {}),
       "x-mockagent-latency-ms": String(latencyMs),
     },

@@ -12,17 +12,22 @@ Define mock endpoints, schemas, scenarios, and response sequences to make edge
 cases repeatable and observable.
 Use Meta-powered coverage guidance to draft tests for behavior your agent has not exercised yet.
 
+**Feature guide:** [Browse the complete feature catalog](./docs/FEATURES.md) for
+a concise overview of authoring, imports, MCP, regression testing, collaboration,
+and integration capabilities.
+
 **[Open MockAgent](https://mockagent.online)** · [Create an account](https://mockagent.online/login?mode=signup) · [Log in](https://mockagent.online/login?mode=login)
 
 ## Find your way around
 
 | I want to… | Start here |
 |---|---|
-| Understand the product and see the main workflow | [Product overview and 60-second demo](#60-second-demo) |
-| Record a product demo | [Five-minute demo script](./docs/DEMO_SCRIPT.md) |
+| Understand the product and see the main workflow | [Product overview and feature tour](https://mockagent.online/#features) |
+| Follow the product demo flow | [Product walkthrough](./walkthrough.md) |
 | Run the app locally | [Local setup guide](./RUN_LOCALLY.md) |
 | Explore the product with a guided tour | [Product walkthrough](./walkthrough.md) |
 | Understand the main components and request flow | [Architecture guide](./docs/ARCHITECTURE.md) |
+| Connect an agent with a hosted MCP server | [Hosted MCP guide](./docs/MCP.md) |
 | Configure environment variables and integrations | [Configuration reference](./docs/CONFIGURATION.md) |
 | Use the real-agent example or CI runner | [Delayed-order example](./examples/delayed-order-refund/README.md) |
 | Report a bug or suggest an improvement | [GitHub issue forms](https://github.com/shauryasjadaunnn12345/Mockagent/issues/new/choose) |
@@ -75,6 +80,9 @@ making comparative claims.**
 
 - **Create mock tools** with a name, description, JSON Schema argument
   contract, and deterministic JSON response.
+- **Import tool definitions** from OpenAPI JSON/YAML, OpenAI or Anthropic
+  function tools, MCP tool lists, or exported HAR traffic; preview generated
+  contracts, captured scenarios, and response sequences before creating them.
 - **Test alternate outcomes** with conditional scenarios and ordered response
   sequences—useful for retries, stale data, and edge cases.
 - **Run an AI agent against your tools** in the Agent Playground and inspect
@@ -87,6 +95,9 @@ making comparative claims.**
   errors, run traces, replay comparisons, and regression analytics.
 - **Control access and usage** with bearer API keys, shared workspaces, plan
   quotas, and log retention settings.
+- **Connect external agents over MCP** with workspace toolsets, stateless
+  discovery/list/call support, API-key or one-time URL-token authentication,
+  and MCP-aware execution logs.
 
 ### Example mock tool
 
@@ -142,11 +153,24 @@ independent agent run and reuse that ID for the calls within that run.
   for testing changing data or retry behavior. Sequences advance on successful
   matching calls with the same run ID; the last response repeats once the
   sequence is exhausted. For retry tests, configure optional scheduled
-  transient failures (`429`, `500`, `502`, or `503`) at specific matching-call
-  steps. These return structured retryable errors, honor `Retry-After`, and
+  fault presets (`401` expired token, `409` duplicate submission, `429` rate
+  limit, and `502`/`504` upstream failures) at specific matching-call steps.
+  These return structured errors, honor `Retry-After` where configured, and
   appear as **Injected Failure** in logs. Scheduled failures advance the
   scenario call step; use the same run ID across retries so failure and
   recovery are deterministic. Without a run ID, each request starts at step 1.
+  Faults are application-level response simulations; timeout and partial
+  response presets do not delay the connection or truncate transport bytes.
+- **Per-run stateful behavior** can be modeled with response sequences. For
+  example, return a successful refund result on the first matching call and a
+  duplicate-submission response on the next call for the same run ID. Sequence
+  state is derived from retained execution logs, so keep the run ID stable for
+  calls in one run and use a new one to reset it.
+- **Behavior assertions** include call guards that block unsafe arguments
+  before scenario execution. Configure JSON Pointer paths with `exists`,
+  `equals`, `not_equals`, `lte`, or `gte`; blocked calls are logged as
+  **Safety Guard Blocked**. Other assertions can check final-answer text and
+  the exact tool-call sequence.
 - **Execution Logs** show calls, validation failures, latency, responses, and
   run IDs. Replay a saved successful call to compare its result against the
   current mock configuration.
@@ -159,6 +183,21 @@ independent agent run and reuse that ID for the calls within that run.
 
   API keys are shown only when created. Save the value securely; revoke it
   from workspace settings if it is lost or no longer needed.
+
+### Hosted MCP
+
+Create an MCP toolset from the dashboard, select the tools to expose, and open
+its **Connect via MCP** panel to copy the endpoint and client setup snippets.
+The hosted endpoint uses the same schemas, scenarios, response sequences,
+scheduled failures, API-key requirements, quotas, and logs as the HTTP gateway.
+See the [hosted MCP guide](./docs/MCP.md) for authentication, protocol
+compatibility, client configuration, and the smoke-test script.
+
+### Shared regression runs
+
+Use **Share run** in regression history to copy a trace link for a saved run.
+The page requires sign-in and membership in the run's workspace; it is not a
+public link. Shared pages are excluded from search indexing.
 
 ### Agent Playground
 
@@ -348,6 +387,24 @@ step summary when `GITHUB_STEP_SUMMARY` is available. A manual-run example is
 provided in [`.github/workflows/mockagent-regression.yml`](./.github/workflows/mockagent-regression.yml).
 
 Run the runner locally with `node scripts/mockagent-ci.mjs`.
+
+#### Add regression feedback to pull requests
+
+The
+[`MockAgent PR feedback` workflow](./.github/workflows/mockagent-pr-feedback.yml)
+updates one bot comment on each pull request with saved-suite case results and
+the changed file list. The normal CI workflow continues to run the PR's tests,
+lint, and build. To enable hosted suites, add repository Actions secrets named
+`MOCKAGENT_BASE_URL` and `MOCKAGENT_API_KEY`; optionally set the
+`MOCKAGENT_SUITE_IDS` Actions variable to a comma-separated subset of suite
+IDs. Without these secrets, the comment reports that hosted suites were not
+run.
+
+The PR feedback workflow runs only the runner checked out from the PR's trusted
+base revision. It never checks out or executes the PR head, and its API key is
+only passed to that runner as an environment variable. Use a dedicated,
+workspace-scoped API key with an appropriate usage limit. Hosted suite calls
+consume normal workspace quotas.
 
 ### Analytics and run history
 

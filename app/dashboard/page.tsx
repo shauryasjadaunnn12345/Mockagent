@@ -4,6 +4,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { StatsCards } from "@/app/dashboard/components/StatsCards";
 import { ToolList } from "@/app/dashboard/components/ToolList";
 import { CreateToolDialog } from "@/app/dashboard/components/CreateToolDialog";
+import { ImportToolsDialog } from "@/app/dashboard/components/ImportToolsDialog";
 import { LogsTable } from "@/app/dashboard/components/LogsTable";
 import { FinalAnswerChecksTable } from "@/app/dashboard/components/FinalAnswerChecksTable";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { AgentPlayground } from "@/app/dashboard/components/AgentPlayground";
 import { RegressionSuitesPanel } from "@/app/dashboard/components/RegressionSuitesPanel";
 import { effectiveWorkspacePlan, PLAN_LIMITS } from "@/lib/billing";
 import { parseRegressionTestCases } from "@/lib/regression-suites";
+import { ToolsetsPanel } from "@/app/dashboard/components/ToolsetsPanel";
 
 export const metadata: Metadata = {
   title: "Workspace dashboard",
@@ -57,7 +59,7 @@ export default async function DashboardPage() {
 
   const workspaceIds = (memberships ?? []).map((membership) => membership.workspace_id);
   const { data: workspaceRows } = workspaceIds.length
-    ? await supabase.from("workspaces").select("id,name,log_retention_days,plan,subscription_status,current_period_end,dodo_customer_id,dodo_subscription_id").in("id", workspaceIds)
+    ? await supabase.from("workspaces").select("id,name,slug,log_retention_days,plan,subscription_status,current_period_end,dodo_customer_id,dodo_subscription_id").in("id", workspaceIds)
     : { data: [] };
   const activeWorkspaceId = workspaceIds.includes(userSettings?.current_workspace_id ?? "")
     ? userSettings?.current_workspace_id ?? ""
@@ -130,12 +132,13 @@ export default async function DashboardPage() {
       .eq("workspace_id", activeWorkspaceId)
       .order("created_at", { ascending: false })
       .limit(100),
-    supabase.from("logs").select("id", { count: "exact", head: true }).eq("workspace_id", activeWorkspaceId),
+    supabase.from("logs").select("id", { count: "exact", head: true }).eq("workspace_id", activeWorkspaceId).not("tool_id", "is", null),
     supabase
       .from("logs")
       .select("id", { count: "exact", head: true })
       .eq("workspace_id", activeWorkspaceId)
-      .eq("status", "SCHEMA_VIOLATION"),
+      .eq("status", "SCHEMA_VIOLATION")
+      .not("tool_id", "is", null),
     supabase
       .from("api_keys")
       .select("id,name,key_prefix,monthly_limit,created_at")
@@ -163,6 +166,16 @@ export default async function DashboardPage() {
       .order("id", { ascending: false })
       .limit(101),
   ]);
+  const { data: toolsets, error: toolsetsError } = activeWorkspaceId
+    ? await supabase
+        .from("toolsets")
+        .select("id,name,slug,access_mode,created_at")
+        .eq("workspace_id", activeWorkspaceId)
+        .order("created_at", { ascending: false })
+    : { data: [], error: null };
+  if (toolsetsError) {
+    console.error("MockAgent dashboard: failed to load toolsets", toolsetsError.message);
+  }
 
       const workspaceMembers: WorkspaceMemberOption[] = workspaceMemberRows ?? [];
       const initialRegressionRuns = (regressionRuns ?? []).slice(0, 100);
@@ -264,10 +277,23 @@ export default async function DashboardPage() {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">Mock Tools</h2>
-          <CreateToolDialog />
+          <div className="flex flex-wrap gap-2">
+            <ImportToolsDialog />
+            <CreateToolDialog />
+          </div>
         </div>
         <ToolList tools={tools ?? []} appUrl={appUrl} />
       </section>
+
+      <ToolsetsPanel
+        toolsets={toolsets ?? []}
+        tools={(tools ?? []).map((tool) => ({
+          id: tool.id,
+          name: tool.name,
+          is_active: tool.is_active,
+        }))}
+        workspaceSlug={activeWorkspace?.slug ?? ""}
+      />
 
       <section>
         {(activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin") && (

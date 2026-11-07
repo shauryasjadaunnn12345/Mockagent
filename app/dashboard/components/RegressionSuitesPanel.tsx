@@ -9,6 +9,7 @@ import {
   loadMoreRegressionRuns,
 } from "@/app/actions/agent-tests";
 import { Button } from "@/components/ui/button";
+import { ShareRunButton } from "@/app/dashboard/components/ShareRunButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -2536,6 +2537,9 @@ export function RegressionSuitesPanel({
                           Branch of {branchSource ? branchSource.run_id : latestRun.branch_from_run_id}
                         </p>
                       )}
+                      <div className="mt-2">
+                        <ShareRunButton runRecordId={latestRun.id} />
+                      </div>
                     </div>
                   )}
                   {latestRun && (

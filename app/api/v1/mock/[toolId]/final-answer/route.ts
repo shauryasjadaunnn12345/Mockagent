@@ -117,6 +117,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .select("id,tool_id,created_at", { count: "exact" })
       .eq("workspace_id", tool.workspace_id)
       .eq("run_id", runId)
+      .not("tool_id", "is", null)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
       .limit(501);
@@ -130,7 +131,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const toolIds = [...new Set((runLogs ?? []).map((log) => log.tool_id))];
+    const toolIds = [...new Set((runLogs ?? [])
+      .map((log) => log.tool_id)
+      .filter((toolId): toolId is string => toolId !== null))];
     const { data: runTools, error: runToolsError } = toolIds.length
       ? await supabase.from("tools").select("id,name").in("id", toolIds)
       : { data: [], error: null };
@@ -140,6 +143,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const toolNameById = new Map((runTools ?? []).map((runTool) => [runTool.id, runTool.name]));
     const resolvedToolCalls: string[] = [];
     for (const log of runLogs ?? []) {
+      if (!log.tool_id) continue;
       const toolName = toolNameById.get(log.tool_id);
       if (toolName === undefined) {
         console.error("MockAgent: run log references an unavailable tool", log.tool_id);

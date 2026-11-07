@@ -1,4 +1,4 @@
-export const INJECTABLE_HTTP_STATUSES = [429, 500, 502, 503] as const;
+export const INJECTABLE_HTTP_STATUSES = [401, 409, 429, 500, 502, 503, 504] as const;
 
 export interface InjectedFailure {
   step: number;
@@ -37,7 +37,7 @@ export function parseChaosConfig(value: unknown): InjectedFailure[] {
       typeof failure.status !== "number" ||
       !INJECTABLE_HTTP_STATUSES.includes(failure.status as InjectedFailure["status"])
     ) {
-      throw new Error(`Scenario failure ${index + 1} status must be 429, 500, 502, or 503.`);
+      throw new Error(`Scenario failure ${index + 1} status must be 401, 409, 429, 500, 502, 503, or 504.`);
     }
     if (
       typeof failure.errorCode !== "string" ||

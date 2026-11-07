@@ -704,7 +704,7 @@ create table if not exists public.logs (
   payload          jsonb not null default '{}'::jsonb,     -- incoming tool-call arguments
   response_body   jsonb,                                   -- returned mock response for replay comparisons
   api_key_id       uuid references public.api_keys (id) on delete set null,
-  status           text not null check (status in ('SUCCESS', 'SCHEMA_VIOLATION', 'INJECTED_FAILURE')),
+  status           text not null check (status in ('SUCCESS', 'SCHEMA_VIOLATION', 'INJECTED_FAILURE', 'POLICY_VIOLATION')),
   scenario_name    text,
   scenario_index   integer,
   scenario_step    integer,
@@ -717,7 +717,7 @@ create table if not exists public.logs (
 alter table public.logs drop constraint if exists logs_status_check;
 alter table public.logs
   add constraint logs_status_check
-  check (status in ('SUCCESS', 'SCHEMA_VIOLATION', 'INJECTED_FAILURE'));
+  check (status in ('SUCCESS', 'SCHEMA_VIOLATION', 'INJECTED_FAILURE', 'POLICY_VIOLATION'));
 
 create table if not exists public.final_answer_submissions (
   id               uuid primary key default uuid_generate_v4(),
@@ -1173,6 +1173,130 @@ select
   workspace_id,
   count(*) filter (where status = 'INJECTED_FAILURE')::integer as injected_failures
 from public.logs
+where tool_id is not null
 group by user_id, date_trunc('day', created_at)::date, workspace_id;
+
+-- ---------------------------------------------------------------------
+-- Hosted MCP toolsets
+-- ---------------------------------------------------------------------
+alter table public.workspaces add column if not exists slug text;
+
+update public.workspaces
+set slug = coalesce(
+  nullif(trim(both '-' from regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g')), ''),
+  'workspace'
+) || '-' || substr(replace(id::text, '-', ''), 1, 8)
+where slug is null;
+
+alter table public.workspaces alter column slug set not null;
+create unique index if not exists workspaces_slug_key on public.workspaces (slug);
+
+create or replace function public.assign_workspace_slug()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public
+as $$
+begin
+  if new.slug is null or trim(new.slug) = '' then
+    new.slug :=
+      coalesce(
+        nullif(trim(both '-' from regexp_replace(lower(new.name), '[^a-z0-9]+', '-', 'g')), ''),
+        'workspace'
+      ) || '-' || substr(replace(new.id::text, '-', ''), 1, 8);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists workspaces_assign_slug on public.workspaces;
+create trigger workspaces_assign_slug
+  before insert on public.workspaces
+  for each row execute function public.assign_workspace_slug();
+
+create unique index if not exists tools_id_workspace_key
+  on public.tools (id, workspace_id);
+
+create table if not exists public.toolsets (
+  id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  name text not null check (char_length(trim(name)) between 1 and 80),
+  slug text not null check (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
+  access_mode text not null default 'api_key' check (access_mode in ('api_key', 'open')),
+  open_token_hash text,
+  is_public boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (workspace_id, slug),
+  unique (id, workspace_id),
+  constraint toolsets_open_token_mode_check check (
+    (access_mode = 'open' and open_token_hash is not null) or
+    (access_mode = 'api_key' and open_token_hash is null)
+  ),
+  constraint toolsets_open_token_hash_check check (
+    open_token_hash is null or open_token_hash ~ '^[a-f0-9]{64}$'
+  )
+);
+
+create index if not exists toolsets_workspace_idx on public.toolsets (workspace_id, created_at desc);
+
+create table if not exists public.toolset_tools (
+  toolset_id uuid not null,
+  tool_id uuid not null,
+  workspace_id uuid not null,
+  position integer not null check (position >= 0),
+  created_at timestamptz not null default now(),
+  primary key (toolset_id, tool_id),
+  unique (toolset_id, position),
+  foreign key (toolset_id, workspace_id)
+    references public.toolsets (id, workspace_id) on delete cascade,
+  foreign key (tool_id, workspace_id)
+    references public.tools (id, workspace_id) on delete cascade
+);
+
+create index if not exists toolset_tools_workspace_idx on public.toolset_tools (workspace_id, toolset_id);
+
+alter table public.logs alter column tool_id drop not null;
+alter table public.logs add column if not exists transport text not null default 'http';
+alter table public.logs add column if not exists toolset_id uuid references public.toolsets (id) on delete set null;
+alter table public.logs add column if not exists jsonrpc_method text;
+alter table public.logs add column if not exists mcp_tool_name text;
+alter table public.logs add column if not exists traceparent text;
+alter table public.logs drop constraint if exists logs_transport_check;
+alter table public.logs add constraint logs_transport_check check (transport in ('http', 'mcp'));
+create index if not exists logs_toolset_created_idx on public.logs (toolset_id, created_at desc);
+
+alter table public.toolsets enable row level security;
+alter table public.toolset_tools enable row level security;
+
+drop policy if exists "toolsets_select_workspace" on public.toolsets;
+create policy "toolsets_select_workspace" on public.toolsets
+  for select to authenticated using (public.is_workspace_member(workspace_id));
+drop policy if exists "toolsets_insert_workspace" on public.toolsets;
+create policy "toolsets_insert_workspace" on public.toolsets
+  for insert to authenticated with check (
+    public.is_workspace_member(workspace_id) and user_id = auth.uid()
+  );
+drop policy if exists "toolsets_update_workspace" on public.toolsets;
+create policy "toolsets_update_workspace" on public.toolsets
+  for update to authenticated using (public.is_workspace_member(workspace_id))
+  with check (public.is_workspace_member(workspace_id));
+drop policy if exists "toolsets_delete_workspace" on public.toolsets;
+create policy "toolsets_delete_workspace" on public.toolsets
+  for delete to authenticated using (public.is_workspace_member(workspace_id));
+
+drop policy if exists "toolset_tools_select_workspace" on public.toolset_tools;
+create policy "toolset_tools_select_workspace" on public.toolset_tools
+  for select to authenticated using (public.is_workspace_member(workspace_id));
+drop policy if exists "toolset_tools_insert_workspace" on public.toolset_tools;
+create policy "toolset_tools_insert_workspace" on public.toolset_tools
+  for insert to authenticated with check (public.is_workspace_member(workspace_id));
+drop policy if exists "toolset_tools_delete_workspace" on public.toolset_tools;
+create policy "toolset_tools_delete_workspace" on public.toolset_tools
+  for delete to authenticated using (public.is_workspace_member(workspace_id));
+
+grant select, insert, update, delete on public.toolsets to authenticated;
+grant select, insert, delete on public.toolset_tools to authenticated;
+grant select, insert on public.logs to service_role;
 
 alter view public.daily_usage set (security_invoker = on);

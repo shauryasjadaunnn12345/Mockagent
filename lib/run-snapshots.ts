@@ -1,5 +1,6 @@
 import { validateSchemaDefinition } from "./validators.ts";
 import { parseScenarios } from "./scenarios.ts";
+import { parseFinalAnswerAssertions } from "./final-answer-assertions.ts";
 
 export const MAX_RUN_TOOL_SNAPSHOT_BYTES = 256_000;
 
@@ -10,6 +11,7 @@ export interface RunToolSnapshot {
   json_schema: unknown;
   mock_response: unknown;
   scenarios: unknown;
+  final_answer_assertions?: unknown;
   updated_at: string;
 }
 
@@ -30,6 +32,9 @@ export function createRunToolSnapshotBundle(
       json_schema: tool.json_schema,
       mock_response: tool.mock_response,
       scenarios: tool.scenarios,
+      ...(tool.final_answer_assertions === undefined
+        ? {}
+        : { final_answer_assertions: tool.final_answer_assertions }),
       updated_at: tool.updated_at,
     })),
   };
@@ -97,6 +102,17 @@ export function assertRunToolSnapshotBundle(
         }`,
       );
     }
+    if (tool.final_answer_assertions !== undefined) {
+      try {
+        parseFinalAnswerAssertions(tool.final_answer_assertions);
+      } catch (error) {
+        throw new Error(
+          `Tool snapshot "${tool.name}" has invalid safety assertions: ${
+            error instanceof Error ? error.message : "unknown error"
+          }`,
+        );
+      }
+    }
   }
 
   if (new Set(expectedToolIds).size !== expectedToolIds.length) {
@@ -122,6 +138,9 @@ export function applyRunToolSnapshot<T extends { id: string }>(
       json_schema: snapshot.json_schema,
       mock_response: snapshot.mock_response,
       scenarios: snapshot.scenarios,
+      ...(snapshot.final_answer_assertions === undefined
+        ? {}
+        : { final_answer_assertions: snapshot.final_answer_assertions }),
       updated_at: snapshot.updated_at,
     };
   });

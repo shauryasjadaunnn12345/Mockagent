@@ -12,6 +12,45 @@ export interface ValidationResult {
   errors: ErrorObject[] | null;
 }
 
+export const MAX_MCP_SCHEMA_DEPTH = 20;
+export const MAX_MCP_SCHEMA_BYTES = 64 * 1024;
+
+export function inspectMcpSchema(schema: unknown): string | null {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return "Tool input schema must be a JSON Schema object.";
+  }
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(schema);
+  } catch {
+    return "Tool input schema is invalid.";
+  }
+  if (new TextEncoder().encode(serialized).byteLength > MAX_MCP_SCHEMA_BYTES) {
+    return `Tool input schema exceeds the ${MAX_MCP_SCHEMA_BYTES}-byte limit.`;
+  }
+
+  const pending: Array<{ value: unknown; depth: number }> = [{ value: schema, depth: 1 }];
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current) continue;
+    if (current.depth > MAX_MCP_SCHEMA_DEPTH) {
+      return `Tool input schema exceeds the maximum depth of ${MAX_MCP_SCHEMA_DEPTH}.`;
+    }
+    if (!current.value || typeof current.value !== "object") continue;
+    if (Array.isArray(current.value)) {
+      for (const child of current.value) pending.push({ value: child, depth: current.depth + 1 });
+      continue;
+    }
+    for (const [key, child] of Object.entries(current.value)) {
+      if (key === "$ref" && typeof child === "string" && !child.startsWith("#")) {
+        return "External JSON Schema references are not supported.";
+      }
+      pending.push({ value: child, depth: current.depth + 1 });
+    }
+  }
+  return null;
+}
+
 export function validateSchemaDefinition(
   schema: Record<string, unknown>
 ): string | null {

@@ -42,6 +42,7 @@ export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
   const toolNameById = new Map(tools.map((t) => [t.id, t.name]));
 
   async function replay(log: LogEntry) {
+    if (!log.tool_id) return;
     setReplayingId(log.id);
     setReplayResults((current) => {
       const next = { ...current };
@@ -112,6 +113,7 @@ export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
               <TableRow>
                 <TableHead>Timestamp</TableHead>
                 <TableHead>Tool</TableHead>
+                <TableHead>Transport / Method</TableHead>
                 <TableHead>Input Arguments</TableHead>
                 <TableHead>Response</TableHead>
                 <TableHead>Status</TableHead>
@@ -128,7 +130,17 @@ export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
                     {formatRelativeTime(log.created_at)}
                   </TableCell>
                   <TableCell className="font-medium">
-                    {toolNameById.get(log.tool_id) ?? "unknown"}
+                    {log.mcp_tool_name ?? toolNameById.get(log.tool_id ?? "") ?? "MCP request"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {log.transport === "mcp" ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Badge variant="outline">MCP</Badge>
+                        <span className="font-mono text-xs text-slate-500">{log.jsonrpc_method ?? "—"}</span>
+                      </span>
+                    ) : (
+                      <Badge variant="outline">HTTP</Badge>
+                    )}
                   </TableCell>
                   <TableCell className="max-w-xs">
                     <code className="block max-w-xs truncate font-mono text-xs text-slate-600">
@@ -151,6 +163,8 @@ export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
                         ? "Success"
                         : log.status === "INJECTED_FAILURE"
                           ? "Injected Failure"
+                          : log.status === "POLICY_VIOLATION"
+                            ? "Safety Guard Blocked"
                           : "Schema Error"}
                     </Badge>
                   </TableCell>
@@ -162,14 +176,14 @@ export function LogsTable({ initialLogs, tools, workspaceId }: LogsTableProps) {
                   </TableCell>
                   <TableCell className="text-slate-500">{log.latency_ms} ms</TableCell>
                   <TableCell>
-                    {log.status === "SUCCESS" && log.response_body !== null ? (
+                    {log.tool_id && log.status === "SUCCESS" && log.response_body !== null ? (
                       <div className="flex items-center gap-2">
                         <Button
                           variant="outline"
                           size="sm"
                           disabled={replayingId !== null}
                           onClick={() => replay(log)}
-                          aria-label={`Replay ${toolNameById.get(log.tool_id) ?? "tool"} call`}
+                          aria-label={`Replay ${toolNameById.get(log.tool_id ?? "") ?? "tool"} call`}
                         >
                           <Play className="h-3.5 w-3.5" />
                           {replayingId === log.id ? "Replaying" : "Replay"}

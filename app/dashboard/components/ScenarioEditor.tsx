@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,29 @@ interface ScenarioEditorProps {
   idPrefix: string;
   value: unknown;
 }
+
+const FAILURE_PRESETS = [
+  {
+    name: "429 rate limit",
+    failure: { status: 429, errorCode: "RATE_LIMITED", message: "Too many requests. Retry after the requested delay.", retryAfterSeconds: 3 },
+  },
+  {
+    name: "504 timeout",
+    failure: { status: 504, errorCode: "UPSTREAM_TIMEOUT", message: "The upstream service timed out before completing the response.", retryAfterSeconds: 2 },
+  },
+  {
+    name: "502 partial response",
+    failure: { status: 502, errorCode: "PARTIAL_RESPONSE", message: "The upstream connection closed before a complete response was received.", retryAfterSeconds: 1 },
+  },
+  {
+    name: "401 expired token",
+    failure: { status: 401, errorCode: "TOKEN_EXPIRED", message: "The access token expired. Refresh authentication before retrying." },
+  },
+  {
+    name: "409 duplicate submission",
+    failure: { status: 409, errorCode: "DUPLICATE_SUBMISSION", message: "This operation was already completed for the current run." },
+  },
+] as const;
 
 function createDraft(value?: unknown, id = 0): ScenarioDraft {
   const record = value && typeof value === "object" && !Array.isArray(value)
@@ -76,6 +99,37 @@ export function ScenarioEditor({ name, idPrefix, value }: ScenarioEditorProps) {
   function updateDraft(id: number, patch: Partial<ScenarioDraft>) {
     setDrafts((current) => current.map((draft) =>
       draft.id === id ? { ...draft, ...patch } : draft
+    ));
+    setPreview(null);
+  }
+
+  function addFailurePreset(id: number, preset: (typeof FAILURE_PRESETS)[number]["failure"]) {
+    const draft = drafts.find((item) => item.id === id);
+    if (!draft) return;
+    let failures: unknown;
+    try {
+      failures = JSON.parse(draft.failures);
+    } catch {
+      setPreview("Scheduled failure JSON is invalid; fix it before adding a preset.");
+      return;
+    }
+    if (!Array.isArray(failures)) {
+      setPreview("Scheduled failures must be a JSON array.");
+      return;
+    }
+    let step = 1;
+    if (draft.isSequence) {
+      try {
+        const responses: unknown = JSON.parse(draft.responses);
+        step = Array.isArray(responses) ? responses.length + 1 : 1;
+      } catch {
+        setPreview("Response sequence JSON is invalid; fix it before adding a preset.");
+        return;
+      }
+    }
+    const next = [...failures, { ...preset, step }];
+    setDrafts((current) => current.map((item) =>
+      item.id === id ? { ...item, failures: JSON.stringify(next, null, 2) } : item
     ));
     setPreview(null);
   }
@@ -198,8 +252,38 @@ export function ScenarioEditor({ name, idPrefix, value }: ScenarioEditorProps) {
             />
             Use ordered response sequence
           </label>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => updateDraft(draft.id, {
+              isSequence: true,
+              responses: JSON.stringify([
+                { status: "completed", message: "Operation completed." },
+                { status: "error", error_code: "DUPLICATE_SUBMISSION", message: "This operation was already completed for this run." },
+              ], null, 2),
+            })}
+          >
+            Simulate one-time side effect
+          </Button>
+          <p className="text-xs text-slate-500">
+            Sequences are persisted through run logs: reuse the same run ID to advance state; a new run ID starts at step 1.
+          </p>
           <label className="block space-y-1 text-xs font-medium text-slate-700">
             Scheduled transient failures (optional JSON array)
+            <div className="flex flex-wrap gap-1.5 py-1">
+              {FAILURE_PRESETS.map(({ name, failure }) => (
+                <Button
+                  key={name}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => addFailurePreset(draft.id, failure)}
+                >
+                  <ShieldAlert className="h-3 w-3" /> {name}
+                </Button>
+              ))}
+            </div>
             <Textarea
               aria-label={`Scenario ${index + 1} scheduled failures`}
               value={draft.failures}
@@ -209,7 +293,7 @@ export function ScenarioEditor({ name, idPrefix, value }: ScenarioEditorProps) {
               className="font-mono text-xs"
             />
             <span className="block font-normal text-slate-500">
-              Example: [{`{"step":1,"status":503,"errorCode":"UPSTREAM_UNAVAILABLE","message":"Try again","retryAfterSeconds":1}`}]
+              Presets inject deterministic HTTP responses at a matching call step. Timeouts/partial responses are represented as retryable 504/502 failures, not real network delays or truncated sockets.
             </span>
           </label>
         </fieldset>

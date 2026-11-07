@@ -145,10 +145,9 @@ first tool is passing.
 This uses an `issue_refund` example. It is suitable for a five-minute
 walkthrough.
 
-For a ready-to-record, timed five-minute version of the hosted demo, use the
-[recording script](./docs/DEMO_SCRIPT.md). It covers the browser-side sandbox,
-Meta explanation and reviewed draft, rerun, coverage panel, and narration
-notes.
+For a short product introduction, start with the
+[README quick start](./README.md#quick-start). This walkthrough provides the
+longer demo sequence and technical context.
 
 ### Before the demo
 

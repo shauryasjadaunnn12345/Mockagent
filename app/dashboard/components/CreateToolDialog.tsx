@@ -165,12 +165,14 @@ export function CreateToolDialog() {
               placeholder={`[
   { "name": "Refund flow", "type": "tool_sequence", "tools": ["lookup_order", "check_refund_eligibility", "issue_refund"] },
   { "name": "Lead with stale status", "type": "before", "first": "Stale price", "then": "$42.10" },
-  { "name": "Include source timestamp", "type": "contains", "text": "Jan 15, 2024" }
+  { "name": "Include source timestamp", "type": "contains", "text": "Jan 15, 2024" },
+  { "name": "Require refund confirmation", "type": "call_guard", "path": "/confirmed", "operator": "equals", "value": true, "message": "Refunds require explicit confirmation." },
+  { "name": "Refund amount ceiling", "type": "call_guard", "path": "/amount", "operator": "lte", "value": 500, "message": "Refund amount exceeds the configured limit." }
 ]`}
               rows={8}
             />
             <p className="text-xs text-slate-500">
-              <code>tool_sequence</code> checks the exact tool names and order for the run ID, including unexpected or missing calls. Use <code>contains</code>, <code>not_contains</code>, or <code>before</code> to check final text.
+              Use <code>call_guard</code> rules to block unsafe arguments before the mock executes. JSON Pointer paths support <code>exists</code>, <code>equals</code>, <code>not_equals</code>, <code>lte</code>, and <code>gte</code>. Violations are logged. Other rules check tool sequences or final-answer text.
             </p>
           </div>
 

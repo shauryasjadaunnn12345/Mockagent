@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const alt =
-  "MockAgent — test AI agent tool calls before connecting real services";
+  "MockAgent — mock AI agent tools, connect over MCP, and test regressions";
 export const size = {
   width: 1200,
   height: 630,
@@ -51,7 +51,7 @@ export default function OpenGraphImage() {
               letterSpacing: "2px",
             }}
           >
-            AI AGENT TOOL TESTING
+            MOCK TOOLS · MCP · REGRESSION TESTING
           </div>
           <div
             style={{
@@ -61,10 +61,10 @@ export default function OpenGraphImage() {
               fontWeight: 700,
             }}
           >
-            Test tool calls before production.
+            Test agent tools before production.
           </div>
           <div style={{ color: "#51645a", fontSize: "26px" }}>
-            Mock endpoints · JSON Schema validation · execution logs
+            MCP · OpenAPI and HAR imports · GitHub Actions
           </div>
         </div>
         <div style={{ color: "#39705b", fontSize: "20px" }}>
