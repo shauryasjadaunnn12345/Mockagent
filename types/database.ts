@@ -297,6 +297,7 @@ export type Database = {
           prompt: string
           test_cases: Json
           required_answer_text: string[]
+          forbidden_answer_text: string[]
           response_assertions: Json
           semantic_criteria: string | null
           tool_ids: string[]
@@ -312,6 +313,7 @@ export type Database = {
           prompt: string
           test_cases?: Json
           required_answer_text?: string[]
+          forbidden_answer_text?: string[]
           response_assertions?: Json
           semantic_criteria?: string | null
           tool_ids: string[]
@@ -327,6 +329,7 @@ export type Database = {
           prompt?: string
           test_cases?: Json
           required_answer_text?: string[]
+          forbidden_answer_text?: string[]
           response_assertions?: Json
           semantic_criteria?: string | null
           tool_ids?: string[]

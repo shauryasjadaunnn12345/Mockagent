@@ -22,6 +22,7 @@ import { RegressionSuitesPanel } from "@/app/dashboard/components/RegressionSuit
 import { effectiveWorkspacePlan, PLAN_LIMITS } from "@/lib/billing";
 import { parseRegressionTestCases } from "@/lib/regression-suites";
 import { ToolsetsPanel } from "@/app/dashboard/components/ToolsetsPanel";
+import { ToolDriftDialog } from "@/app/dashboard/components/ToolDriftDialog";
 
 export const metadata: Metadata = {
   title: "Workspace dashboard",
@@ -154,7 +155,7 @@ export default async function DashboardPage() {
       supabase.rpc("list_workspace_members", { target_workspace_id: activeWorkspaceId }),
     supabase
       .from("agent_test_suites")
-      .select("id,name,prompt,test_cases,tool_ids,expected_tool_ids,required_answer_text,response_assertions,semantic_criteria,created_at")
+      .select("id,name,prompt,test_cases,tool_ids,expected_tool_ids,required_answer_text,forbidden_answer_text,response_assertions,semantic_criteria,created_at")
       .eq("workspace_id", activeWorkspaceId)
       .order("created_at", { ascending: false })
       .limit(50),
@@ -278,6 +279,14 @@ export default async function DashboardPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">Mock Tools</h2>
           <div className="flex flex-wrap gap-2">
+            <ToolDriftDialog
+              tools={(tools ?? []).map((tool) => ({
+                id: tool.id,
+                name: tool.name,
+                description: tool.description,
+                json_schema: tool.json_schema,
+              }))}
+            />
             <ImportToolsDialog />
             <CreateToolDialog />
           </div>

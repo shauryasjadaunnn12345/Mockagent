@@ -15,6 +15,7 @@ import {
   Play,
   ShieldCheck,
   Sparkles,
+  Telescope,
   Waypoints,
   Workflow,
 } from "lucide-react";
@@ -64,6 +65,20 @@ const capabilities = [
     text: "Expose a workspace toolset through a hosted MCP URL with API-key or token-based access.",
     detail: "HOSTED MCP",
   },
+  {
+    number: "07",
+    icon: ShieldCheck,
+    title: "Test untrusted tool output",
+    text: "Add a controlled prompt-injection fixture and check whether a saved regression answer repeats its known marker.",
+    detail: "PROMPT-INJECTION CHECKS",
+  },
+  {
+    number: "08",
+    icon: Telescope,
+    title: "Spot contract drift",
+    text: "Compare a pasted API specification with saved mock names, descriptions, and schemas, then review reliability trends.",
+    detail: "DRIFT & RELIABILITY",
+  },
 ];
 
 const featureGroups = [
@@ -80,6 +95,7 @@ const featureGroups = [
       { name: "Scheduled transient failures", text: "Inject deterministic 429, 500, 502, or 503 faults at selected steps, with retry guidance and Retry-After behavior." },
       { name: "Assertions and semantic criteria", text: "Check expected ordered tool calls and final-answer phrases; optionally judge answers against successful tool evidence." },
       { name: "Revision history", text: "Compare tool configuration revisions, inspect changed fields, and restore a prior configuration." },
+      { name: "Pasted-spec drift check", text: "Compare saved mock names, descriptions, and input schemas with pasted OpenAPI, function-tool, or MCP definitions. This is a point-in-time comparison; MockAgent does not poll upstream APIs." },
     ],
   },
   {
@@ -103,6 +119,7 @@ const featureGroups = [
       { name: "Saved suites and prompt cases", text: "Create suites with up to 20 named cases, selected tools, and expected behavior." },
       { name: "Ordered tool-call checks", text: "Assert the exact tool names and order for a run, including unexpected or missing calls." },
       { name: "Final-answer and response checks", text: "Check phrases and JSON response fields using equality, contains, existence, numeric comparisons, or JSON Schema shape assertions." },
+      { name: "Prompt-injection fixture", text: "Add a known untrusted-output marker and assert it is absent from the final answer. This deterministic check is not a general prompt-injection detector." },
       { name: "Semantic answer checks", text: "Optionally evaluate an answer against successful tool responses and timestamps using the configured model judge." },
       { name: "Suite execution controls", text: "Run one case or all cases with confirmation, see per-check outcomes and traces, and stop after the active case." },
       { name: "Run history, replay, and branches", text: "Replay prompt, model, checks, and current or saved tool configuration; compare with the source run or branch into an edited test." },
@@ -124,6 +141,7 @@ const featureGroups = [
       { name: "Bounded run traces", text: "Review saved prompt and trace, ordered tool calls, model/provider metadata, and reasoning-replay status without exposing encrypted reasoning." },
       { name: "Mock-call replay comparison", text: "Replay a saved successful request and compare its response with the current mock configuration." },
       { name: "Regression analytics and coverage", text: "Explore pass rates, recent trends, recurring failures, model breakdowns, and coverage observed in available saved traces." },
+      { name: "Suite reliability score", text: "See the pass percentage across up to 20 recent saved case runs and the change against the preceding equal-size window in loaded history." },
       { name: "Usage analytics", text: "View daily calls, average latency, schema violations, and injected failures over the available reporting period." },
       { name: "Advanced insights", text: "Inspect service health integrations and workspace-level operational indicators." },
     ],
@@ -163,6 +181,7 @@ const featureGroups = [
       { name: "Plan and billing controls", text: "Review Free (3 tools), Solo (25), and Team (250) entitlements, usage meters, and paid subscriptions where billing is configured." },
       { name: "Workspace-level limits", text: "Plan entitlements include monthly call and AI quotas, seats, API-key counts, and maximum log retention; AI requests also have a shared per-minute limit." },
       { name: "Log retention", text: "Choose a retention period permitted by the plan; scheduled cleanup removes expired execution logs." },
+      { name: "Self-hosting and OpenTelemetry", text: "Run a separate Next.js deployment and optionally export low-cardinality operational OTLP spans and metrics without prompts, arguments, or mock payloads." },
     ],
   },
   {
@@ -221,13 +240,17 @@ const faqs = [
 ];
 
 export const metadata: Metadata = {
-  title: "AI Agent Tool Mocking, MCP & Regression Testing",
+  title: "AI Agent Mock Tools, MCP & Regression Testing",
   description:
-    "Mock AI agent tools, connect via MCP, import OpenAPI or HAR captures, test scenarios, and run regression suites with GitHub Actions.",
+    "Mock AI agent tools, connect via MCP, compare API specs, test known prompt-injection markers, and run regression suites.",
   keywords: [
     "AI agent tool mocking",
     "MCP server for AI agents",
     "agent regression testing",
+    "AI prompt injection regression tests",
+    "API schema drift checks",
+    "AI agent reliability score",
+    "OpenTelemetry for self-hosted AI tools",
     "OpenAPI mock generator",
     "HAR traffic import",
     "JSON Schema tool validation",
@@ -239,16 +262,16 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     url: "https://mockagent.online/",
-    title: "MockAgent | AI Agent Tool Mocking, MCP & Testing",
+    title: "MockAgent | AI Agent Mock Tools, MCP & Testing",
     description:
-      "Build mock tools, connect agents over MCP, import definitions or HAR captures, and run repeatable regression tests.",
+      "Mock AI agent tools, connect via MCP, compare API specs, test known prompt-injection markers, and run repeatable regressions.",
     images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "MockAgent AI agent tool testing" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "MockAgent | AI Agent Tool Mocking, MCP & Testing",
+    title: "MockAgent | AI Agent Mock Tools, MCP & Testing",
     description:
-      "Build mock tools, connect agents over MCP, import definitions or HAR captures, and run repeatable regression tests.",
+      "Mock AI agent tools, connect via MCP, compare API specs, test known prompt-injection markers, and run repeatable regressions.",
     images: ["/opengraph-image"],
   },
 };
@@ -271,7 +294,7 @@ const structuredData = {
       applicationCategory: "DeveloperApplication",
       operatingSystem: "Web",
       description:
-        "Create and validate mock tools, connect agent clients over MCP, import tool definitions and HAR captures, run regression suites, and inspect execution evidence.",
+        "Create and validate mock tools, connect agent clients over MCP, compare pasted API specifications, test known untrusted-output markers, and run regression suites.",
       featureList: [
         "HTTP mock endpoints and per-tool API-key protection",
         "JSON Schema validation for mock tool calls",
@@ -288,6 +311,9 @@ const structuredData = {
         "JavaScript/TypeScript SDK, HTTP API, and Python SDK source",
         "Local/Actions regression runner and optional pull request result comments",
         "Execution and final-answer logs, bounded traces, replay comparisons, usage analytics, and service insights",
+        "Pasted-spec API drift comparisons and per-suite reliability trends based on loaded regression history",
+        "Deterministic untrusted-output marker fixture with forbidden-answer regression checks",
+        "Optional privacy-bounded OpenTelemetry OTLP/HTTP export for self-hosted deployments",
         "Shared workspaces, member roles, API keys, rate limits, plan quotas, billing controls, and log retention",
         "Safe seeded delayed-order demo that does not issue a real refund",
       ],
@@ -477,7 +503,7 @@ export default async function HomePage() {
             </p>
           </div>
 
-          <div className="mt-12 grid gap-x-8 gap-y-10 border-t border-[#e1e9e1] pt-8 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-12 grid gap-x-8 gap-y-10 border-t border-[#e1e9e1] pt-8 sm:grid-cols-2 xl:grid-cols-4">
             {capabilities.map((item) => {
               const Icon = item.icon;
               return (
@@ -504,7 +530,7 @@ export default async function HomePage() {
               Everything to mock, exercise, and improve agent tool behavior.
             </h2>
             <p className="mt-4 text-sm leading-6 text-[#65776c] sm:text-base">
-              Explore MockAgent&apos;s testing, Meta AI, observability, integration, and workspace features at a glance. AI-generated content stays reviewable; coverage reflects the saved traces that have actually been run.
+              Explore MockAgent&apos;s testing, Meta AI, observability, integration, and workspace features at a glance. AI-generated content stays reviewable; coverage and reliability reflect the saved traces that have actually been run.
             </p>
           </div>
 
@@ -538,7 +564,7 @@ export default async function HomePage() {
             })}
           </div>
           <p className="mt-6 text-xs leading-5 text-[#718278]">
-            Meta features require a configured provider and use workspace AI quotas. Semantic QA is optional and model-based. Paid checkout availability depends on each deployment&apos;s billing configuration.
+            Prompt-injection checks use a known test marker and are not a general security detector. Drift checks compare pasted specifications only; they do not poll live APIs. Reliability is based on loaded suite history. Optional OpenTelemetry export is operational-only; paid checkout depends on each deployment&apos;s billing configuration.
           </p>
         </div>
       </section>

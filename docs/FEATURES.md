@@ -53,6 +53,10 @@ details.
 - **Meta AI Tool Studio:** Draft a tool name, description, schema, response,
   and scenarios from a natural-language request. Review and edit drafts
   before saving.
+- **Pasted-spec drift checks:** Compare saved tool names, descriptions, and
+  input schemas against pasted OpenAPI, function-tool, or MCP definitions.
+  This is a point-in-time comparison; MockAgent does not fetch or poll a live
+  upstream API.
 
 Imports are bounded and previewed before creation. Review generated content,
 especially HAR data: redaction is heuristic and is not guaranteed to remove
@@ -79,7 +83,10 @@ all private data. See [Importing mock tools](./IMPORTING_TOOLS.md).
 - **Saved suites:** Group up to 20 named prompt cases, selected tools, and
   expected behavior.
 - **Deterministic checks:** Check exact ordered tool calls, required or
-  forbidden answer text, and JSON response fields or shapes.
+  forbidden answer text, and JSON response fields or shapes. The prompt-
+  injection fixture supplies a known untrusted-output marker so a test can
+  check whether the final answer repeats it. This is a controlled regression
+  check, not a general prompt-injection detector or security certification.
 - **Semantic checks:** Optionally evaluate answer support against tool
   evidence using the configured model judge.
 - **Execution controls:** Run one case or a suite, inspect per-check results,
@@ -110,6 +117,10 @@ it does not measure every workspace call or guarantee agent correctness.
   current tool configuration and compare responses.
 - **Analytics:** Review usage and latency summaries, regression trends,
   recurring failures, model breakdowns, and trace-based coverage.
+- **Reliability score:** Each saved suite shows its pass percentage for the
+  latest up to 20 saved case runs and the percentage-point change against the
+  preceding equal-size window in loaded history. It reflects the loaded
+  regression history, not every run or an overall safety guarantee.
 - **Share run:** Copy a link to a saved regression trace. Viewers must sign in
   and belong to that run's workspace; the page is not public and is excluded
   from search indexing.
@@ -142,6 +153,14 @@ logs. See [Hosted MCP servers](./MCP.md) for client setup and limits.
   tool and seat limits, API-key limits, and maximum log retention. Gateway and
   AI rate limits also apply. Paid billing availability depends on deployment
   configuration.
+- **Self-hosting and OpenTelemetry:** Deploy a separate Next.js instance and
+  optionally export operational-only OTLP/HTTP spans and metrics. Telemetry
+  excludes prompts, tool names, arguments, responses, workspace/user IDs, and
+  run IDs. See the [self-hosting guide](./SELF_HOSTING.md) for setup and
+  limitations.
+- **Self-hosting and telemetry:** Deploy a separate Next.js instance and
+  optionally export operational-only OpenTelemetry spans and metrics. See the
+  [self-hosting guide](./SELF_HOSTING.md).
 
 See [Plans and usage in the README](../README.md#plans-and-usage), the
 [configuration reference](./CONFIGURATION.md), and the

@@ -27,6 +27,8 @@ The guides below also explain how to run or self-host a separate instance.
   MCP tool-list definitions and preview the generated mocks.
 - [Configuration](./CONFIGURATION.md): environment variables, secrets,
   provider selection, and operational caveats.
+- [Self-hosting](./SELF_HOSTING.md): deploy your own Next.js instance and
+  optionally export privacy-bounded OpenTelemetry data.
 - [Delayed-order refund example](../examples/delayed-order-refund/README.md):
   reproduce a real-agent tool bug using the JavaScript SDK.
 - [CI runner](../scripts/mockagent-ci.mjs): run saved regression suites from

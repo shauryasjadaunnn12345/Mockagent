@@ -41,6 +41,7 @@ export interface RegressionSuiteInput {
   toolIds: string[];
   expectedToolIds: string[] | null;
   requiredAnswerText: string[];
+  forbiddenAnswerText: string[];
   responseAssertions: RegressionResponseAssertion[];
   semanticCriteria: string | null;
 }
@@ -288,19 +289,47 @@ export function parseRegressionSuiteInput(value: unknown): RegressionSuiteInput 
   }
   const requiredAnswerText = rawPhrases.map((phrase) => phrase.trim());
 
+  const rawForbiddenPhrases = value.forbiddenAnswerText ?? [];
+  if (
+    !Array.isArray(rawForbiddenPhrases) ||
+    rawForbiddenPhrases.length > MAX_REGRESSION_EXPECTED_PHRASES ||
+    !rawForbiddenPhrases.every(
+      (phrase) =>
+        typeof phrase === "string" &&
+        phrase.trim().length > 0 &&
+        phrase.trim().length <= MAX_REGRESSION_PHRASE_LENGTH
+    )
+  ) {
+    throw new Error(
+      `Add at most ${MAX_REGRESSION_EXPECTED_PHRASES} non-empty forbidden answer phrases, each at most ${MAX_REGRESSION_PHRASE_LENGTH} characters.`
+    );
+  }
+  const forbiddenAnswerText = rawForbiddenPhrases.map((phrase) => phrase.trim());
+
   const responseAssertions = parseRegressionResponseAssertions(value.responseAssertions, toolIds);
   const semanticCriteria = parseSemanticCriteria(value.semanticCriteria);
 
   if (
     expectedToolIds === null &&
     requiredAnswerText.length === 0 &&
+    forbiddenAnswerText.length === 0 &&
     responseAssertions.length === 0 &&
     semanticCriteria === null
   ) {
-    throw new Error("Add a tool sequence, a tool-response assertion, required answer phrase, or semantic QA criteria.");
+    throw new Error("Add a tool sequence, a tool-response assertion, required/forbidden answer phrase, or semantic QA criteria.");
   }
 
-  return { name, prompt, testCases, toolIds, expectedToolIds, requiredAnswerText, responseAssertions, semanticCriteria };
+  return {
+    name,
+    prompt,
+    testCases,
+    toolIds,
+    expectedToolIds,
+    requiredAnswerText,
+    forbiddenAnswerText,
+    responseAssertions,
+    semanticCriteria,
+  };
 }
 
 export function evaluateRegressionTest(
@@ -310,7 +339,8 @@ export function evaluateRegressionTest(
   answer: string,
   toolStatuses?: number[],
   actualCalls?: Array<{ toolId: string; toolName?: string; response: unknown }>,
-  responseAssertions: RegressionResponseAssertion[] = []
+  responseAssertions: RegressionResponseAssertion[] = [],
+  forbiddenAnswerText: string[] = []
 ): RegressionEvaluation {
   const checks: RegressionCheck[] = [];
 
@@ -339,6 +369,15 @@ export function evaluateRegressionTest(
       name: `Answer contains "${phrase}"`,
       passed: answer.toLocaleLowerCase().includes(phrase.toLocaleLowerCase()),
       expected: phrase,
+      actual: answer,
+    });
+  }
+
+  for (const phrase of forbiddenAnswerText) {
+    checks.push({
+      name: `Answer does not contain "${phrase}"`,
+      passed: !answer.toLocaleLowerCase().includes(phrase.toLocaleLowerCase()),
+      expected: `Must not contain: ${phrase}`,
       actual: answer,
     });
   }

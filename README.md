@@ -28,6 +28,7 @@ and integration capabilities.
 | Understand the main components and request flow | [Architecture guide](./docs/ARCHITECTURE.md) |
 | Connect an agent with a hosted MCP server | [Hosted MCP guide](./docs/MCP.md) |
 | Configure environment variables and integrations | [Configuration reference](./docs/CONFIGURATION.md) |
+| Deploy a separate instance | [Self-hosting guide](./docs/SELF_HOSTING.md) |
 | Use the real-agent example or CI runner | [Delayed-order example](./examples/delayed-order-refund/README.md) |
 | Report a bug or suggest an improvement | [GitHub issue forms](https://github.com/shauryasjadaunnn12345/Mockagent/issues/new/choose) |
 | Make a contribution | [Contributing guide](./CONTRIBUTING.md) |
@@ -81,14 +82,28 @@ exercise tool-boundary behavior without calling live business services.
 - **Generate a tool draft with Meta AI** from a plain-language description,
   review or edit the generated schema and scenarios, then create the mock tool.
 - **Build repeatable regression tests** with named prompt cases, expected tool
-  calls, answer checks, and assertions against JSON response fields.
+  calls, answer checks, and assertions against JSON response fields. Check
+  forbidden answer phrases to catch a known untrusted-output marker in a
+  controlled prompt-injection test.
 - **Understand changes and failures** with execution logs, schema validation
-  errors, run traces, replay comparisons, and regression analytics.
+  errors, run traces, replay comparisons, and regression analytics. Compare
+  saved tool contracts with a pasted API specification and review a
+  per-suite reliability trend based on recent loaded run history.
 - **Control access and usage** with bearer API keys, shared workspaces, plan
   quotas, and log retention settings.
 - **Connect external agents over MCP** with workspace toolsets, stateless
   discovery/list/call support, API-key or one-time URL-token authentication,
   and MCP-aware execution logs.
+- **Self-host and monitor** a separate MockAgent deployment, with optional
+  operational-only OpenTelemetry export to an OTLP/HTTP collector.
+
+Prompt-injection checks use a known test marker; they are not a general
+prompt-injection detector. Drift checks compare pasted specifications at a
+point in time and do not poll live APIs. Reliability scores summarize loaded
+suite history rather than every run. OpenTelemetry export excludes prompts,
+tool arguments, mock responses, and workspace or user identifiers. See the
+[feature guide](./docs/FEATURES.md), [self-hosting guide](./docs/SELF_HOSTING.md),
+and [configuration reference](./docs/CONFIGURATION.md) for details.
 
 ### Example mock tool
 
@@ -498,23 +513,25 @@ revoke keys that are no longer in use.
 
 ## Self-hosting
 
-This repository contains the MockAgent application. To run your own instance,
-configure Supabase, Upstash rate limiting, the model provider, and—if needed—
-Dodo Payments using [`.env.example`](./.env.example). Apply [`schema.sql`](./schema.sql)
-to your Supabase project before using the app. Reapply it to existing
-deployments to update the logs status constraint for scheduled
-`INJECTED_FAILURE` entries. Before deploying, run:
+This repository contains the MockAgent application. For prerequisites,
+environment setup, database initialization, Node deployment guidance, and
+optional OpenTelemetry export, follow the dedicated
+[self-hosting guide](./docs/SELF_HOSTING.md) and
+[configuration reference](./docs/CONFIGURATION.md). Apply
+[`schema.sql`](./schema.sql) to your Supabase project before using the app.
+Before deploying, run:
 
 ```bash
-npm install
+npm ci
 npm test
+npm run lint
 npm run check:config
 npm run build
 ```
 
-The configuration check validates environment-variable presence and format;
-it does not apply or exercise a live database migration, model provider, or
-payment checkout. Test those integrations in their respective test
+Local tests and builds do not verify live database migrations, provider
+credentials, rate limiting, payment checkout, or telemetry collector
+connectivity. Test those integrations in their respective staging
 environments before enabling them for users.
 
 ## Support

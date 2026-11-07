@@ -79,6 +79,27 @@ environment, and product IDs before enabling checkout. `npm run check:config`
 checks configuration presence and format; it does not verify a live payment
 checkout or webhook.
 
+## OpenTelemetry export
+
+OpenTelemetry export is optional and disabled by default. When configured,
+MockAgent sends OTLP/HTTP spans and metrics for mock tool calls, MCP requests,
+and saved regression runs.
+
+| Variable | Purpose |
+|---|---|
+| `OTEL_SERVICE_NAME` | Service name attached to exported telemetry. Defaults to `mockagent`. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Base OTLP/HTTP collector URL. MockAgent appends `/v1/traces` and `/v1/metrics`. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Optional explicit trace endpoint; overrides the derived trace URL. |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Optional explicit metrics endpoint; overrides the derived metrics URL. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Optional comma-separated OTLP headers. URL-encode values containing commas or special characters; configure credentials only in the server secret manager. |
+
+Only event category, outcome, low-cardinality transport, duration, and service
+name are exported. Prompts, tool names/IDs, arguments, responses, workspace and
+user IDs, run IDs, and API keys are not included. Non-local collector
+endpoints must use HTTPS. Exports have a one-second timeout and failures are
+logged without failing the application request. See the
+[self-hosting guide](./SELF_HOSTING.md) for operational details.
+
 ## Validation and related guides
 
 ```bash

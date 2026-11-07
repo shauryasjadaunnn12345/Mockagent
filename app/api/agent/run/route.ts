@@ -23,6 +23,7 @@ import {
   type RunToolSnapshotBundle,
 } from "@/lib/run-snapshots";
 import { enforceAIRequestBudget } from "@/lib/ai-usage";
+import { exportOperationalEvent } from "@/lib/otel-export";
 import { aiMonthlyRequestLimit } from "@/lib/billing";
 import {
   evaluateSemanticAnswer,
@@ -89,6 +90,7 @@ interface RegressionSuite {
   tool_ids: string[];
   expected_tool_ids: string[] | null;
   required_answer_text: string[];
+  forbidden_answer_text: string[];
   response_assertions: RegressionResponseAssertion[];
   semantic_criteria: string | null;
 }
@@ -138,6 +140,7 @@ async function readJsonResponse(response: Response): Promise<unknown> {
 }
 
 export async function POST(request: NextRequest) {
+  const routeStartedAt = performance.now();
   const sessionClient = await createClient();
   const {
     data: { user },
@@ -303,7 +306,7 @@ export async function POST(request: NextRequest) {
     }
     const { data: suite, error: suiteError } = await supabase
       .from("agent_test_suites")
-      .select("id,name,prompt,test_cases,tool_ids,expected_tool_ids,required_answer_text,response_assertions,semantic_criteria")
+      .select("id,name,prompt,test_cases,tool_ids,expected_tool_ids,required_answer_text,forbidden_answer_text,response_assertions,semantic_criteria")
       .eq("id", body.suiteId)
       .eq("workspace_id", workspaceId)
       .maybeSingle();
@@ -727,7 +730,8 @@ export async function POST(request: NextRequest) {
         answer,
         calls.map((call) => call.status),
         calls.map((call) => ({ toolId: call.toolId, toolName: call.toolName, response: call.response })),
-        regressionSuite.response_assertions
+        regressionSuite.response_assertions,
+        regressionSuite.forbidden_answer_text
       );
       if (regressionSuite.semantic_criteria) {
         const evidence: SemanticCallEvidence[] = calls
@@ -815,6 +819,12 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
+      await exportOperationalEvent({
+        name: "mockagent.regression.run",
+        outcome: evaluation.passed ? "success" : "validation_error",
+        durationMs: performance.now() - routeStartedAt,
+        transport: "dashboard",
+      });
       if (configSnapshotToken) {
         const { error: cleanupError } = await admin
           .from("agent_run_config_overrides")

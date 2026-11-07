@@ -11,6 +11,7 @@ export interface RegressionSuiteExport {
   toolNames: string[];
   expectedToolNames: string[] | null;
   requiredAnswerText: string[];
+  forbiddenAnswerText: string[];
   responseAssertions: unknown;
   semanticCriteria: string | null;
 }
@@ -32,6 +33,7 @@ export function createRegressionSuiteBundle(suites: RegressionSuiteExport[]): Re
       toolNames: [...suite.toolNames],
       expectedToolNames: suite.expectedToolNames ? [...suite.expectedToolNames] : null,
       requiredAnswerText: [...suite.requiredAnswerText],
+      forbiddenAnswerText: [...suite.forbiddenAnswerText],
       responseAssertions: suite.responseAssertions,
       semanticCriteria: suite.semanticCriteria,
     })),
@@ -73,6 +75,7 @@ export function parseRegressionSuiteBundle(text: string) {
         toolIds: suite.toolNames,
         expectedToolIds: suite.expectedToolNames,
         requiredAnswerText: suite.requiredAnswerText,
+        forbiddenAnswerText: suite.forbiddenAnswerText,
         responseAssertions: suite.responseAssertions,
         semanticCriteria: suite.semanticCriteria,
       });

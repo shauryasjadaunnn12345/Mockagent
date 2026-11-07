@@ -95,3 +95,6 @@ Meta-provider, Redis, or Dodo Payments behavior.
 For system design and request flow, see the
 [architecture guide](./docs/ARCHITECTURE.md). For the product walkthrough,
 see [`walkthrough.md`](./walkthrough.md).
+
+For production deployment of a separate instance, see the
+[self-hosting guide](./docs/SELF_HOSTING.md).

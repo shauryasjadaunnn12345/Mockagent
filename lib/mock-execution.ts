@@ -16,6 +16,7 @@ import {
 } from "./scenarios.ts";
 import type { ExecutionStatus, Json } from "../types/database";
 import type { createAdminClient } from "./supabase/server";
+import { exportOperationalEvent, type OperationalOutcome } from "./otel-export.ts";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -101,7 +102,7 @@ function gatewayError(status: number, code: string, message: string): MockExecut
   };
 }
 
-export async function executeMockTool(context: MockExecutionContext): Promise<MockExecutionResult> {
+async function executeMockToolInternal(context: MockExecutionContext): Promise<MockExecutionResult> {
   const {
     supabase,
     tool,
@@ -314,4 +315,29 @@ export async function executeMockTool(context: MockExecutionContext): Promise<Mo
     gatewayError: null,
     policyViolations,
   };
+}
+
+export async function executeMockTool(context: MockExecutionContext): Promise<MockExecutionResult> {
+  const telemetryStartedAt = performance.now();
+  let outcome: OperationalOutcome = "server_error";
+  try {
+    const result = await executeMockToolInternal(context);
+    outcome = result.gatewayError
+      ? "server_error"
+      : result.status === "SUCCESS"
+        ? "success"
+        : result.status === "SCHEMA_VIOLATION"
+          ? "validation_error"
+          : result.status === "POLICY_VIOLATION"
+            ? "policy_violation"
+            : "injected_failure";
+    return result;
+  } finally {
+    await exportOperationalEvent({
+      name: "mockagent.tool.call",
+      outcome,
+      durationMs: performance.now() - telemetryStartedAt,
+      ...(context.transport ? { transport: context.transport } : { transport: "http" }),
+    });
+  }
 }

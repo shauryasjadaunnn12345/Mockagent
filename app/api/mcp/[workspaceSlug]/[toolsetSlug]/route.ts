@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { authenticateMcpRequest } from "@/lib/mcp-auth";
 import { executeMockTool } from "@/lib/mock-execution";
+import { exportOperationalEvent } from "@/lib/otel-export";
 import {
   handleMcpMessage,
   jsonRpcError,
@@ -169,6 +170,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  const requestStartedAt = performance.now();
   if (!validateOrigin(request)) {
     return responseError(403, { error: "Origin is not allowed." });
   }
@@ -217,7 +219,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
     if (error) console.error("MockAgent MCP: failed to write malformed-request log", error.message);
   };
-  const requestStartedAt = performance.now();
   const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
   if (contentType !== "application/json") {
     const body = { error: "Content-Type must be application/json." };
@@ -502,6 +503,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       response.body?.result ?? response.body?.error ?? response.body ?? null
     );
   }
+  await exportOperationalEvent({
+    name: "mockagent.mcp.request",
+    outcome: response.status < 400
+      ? "success"
+      : response.status < 500
+        ? "client_error"
+        : "server_error",
+    durationMs: performance.now() - requestStartedAt,
+    transport: "mcp",
+  });
   if (response.notification) return new NextResponse(null, { status: 202 });
   return NextResponse.json(response.body, { status: response.status });
 }

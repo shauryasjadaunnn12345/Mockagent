@@ -295,6 +295,7 @@ create table if not exists public.agent_test_suites (
   tool_ids              uuid[] not null check (cardinality(tool_ids) between 1 and 250),
   expected_tool_ids     uuid[],
   required_answer_text  text[] not null default '{}'::text[],
+  forbidden_answer_text text[] not null default '{}'::text[],
   response_assertions   jsonb not null default '[]'::jsonb,
   semantic_criteria     text,
   created_at            timestamptz not null default now(),
@@ -303,6 +304,7 @@ create table if not exists public.agent_test_suites (
     check (
       expected_tool_ids is not null or
       cardinality(required_answer_text) > 0 or
+      cardinality(forbidden_answer_text) > 0 or
       case
         when jsonb_typeof(response_assertions) = 'array'
           then jsonb_array_length(response_assertions) > 0
@@ -318,7 +320,8 @@ create table if not exists public.agent_test_suites (
         else false
       end
     ),
-  check (cardinality(required_answer_text) <= 20)
+  check (cardinality(required_answer_text) <= 20),
+  check (cardinality(forbidden_answer_text) <= 20)
 );
 
 alter table public.agent_test_suites
@@ -907,6 +910,13 @@ alter table public.agent_test_suites
   add column if not exists response_assertions jsonb not null default '[]'::jsonb,
   add column if not exists semantic_criteria text;
 alter table public.agent_test_suites
+  add column if not exists forbidden_answer_text text[] not null default '{}'::text[];
+alter table public.agent_test_suites
+  drop constraint if exists agent_test_suites_forbidden_answer_text_check;
+alter table public.agent_test_suites
+  add constraint agent_test_suites_forbidden_answer_text_check
+  check (cardinality(forbidden_answer_text) <= 20);
+alter table public.agent_test_suites
   drop constraint if exists agent_test_suites_tool_ids_check;
 alter table public.agent_test_suites
   add constraint agent_test_suites_tool_ids_check
@@ -920,6 +930,7 @@ alter table public.agent_test_suites
     check (
       expected_tool_ids is not null or
       cardinality(required_answer_text) > 0 or
+      cardinality(forbidden_answer_text) > 0 or
       case
         when jsonb_typeof(response_assertions) = 'array'
           then jsonb_array_length(response_assertions) > 0

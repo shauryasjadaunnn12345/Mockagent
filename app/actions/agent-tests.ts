@@ -136,6 +136,7 @@ export async function createRegressionSuite(input: unknown) {
     tool_ids: suite.toolIds,
     expected_tool_ids: suite.expectedToolIds,
     required_answer_text: suite.requiredAnswerText,
+    forbidden_answer_text: suite.forbiddenAnswerText,
     response_assertions: JSON.parse(JSON.stringify(suite.responseAssertions)) as Json,
     semantic_criteria: suite.semanticCriteria,
   }).select("id").single();
