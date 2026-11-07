@@ -1,6 +1,6 @@
 # MockAgent
 
-**New here?** Start with the [60-second overview](#60-second-demo), then use
+**New here?** Start with the [quick start](#quick-start), then use
 the [documentation index](./docs/README.md) to find setup, architecture, API,
 and contribution guides.
 
@@ -23,7 +23,6 @@ and integration capabilities.
 | I want to… | Start here |
 |---|---|
 | Understand the product and see the main workflow | [Product overview and feature tour](https://mockagent.online/#features) |
-| Follow the product demo flow | [Product walkthrough](./walkthrough.md) |
 | Run the app locally | [Local setup guide](./RUN_LOCALLY.md) |
 | Explore the product with a guided tour | [Product walkthrough](./walkthrough.md) |
 | Understand the main components and request flow | [Architecture guide](./docs/ARCHITECTURE.md) |
@@ -34,11 +33,6 @@ and integration capabilities.
 | Make a contribution | [Contributing guide](./CONTRIBUTING.md) |
 
 For the full documentation map, see [docs/README.md](./docs/README.md).
-
-### 60-second demo
-
-**60-second demo GIF placeholder:** add the recording at
-[`docs/media/mockagent-demo.gif`](./docs/media/mockagent-demo.gif).
 
 ### Quick start
 
@@ -70,9 +64,6 @@ MockAgent focuses on mocked agent tools: schema-validated arguments,
 conditional scenarios and response sequences, observable traces, and
 coverage-guided regression-test generation from saved traces. This lets a team
 exercise tool-boundary behavior without calling live business services.
-
-**Competitor comparison: TODO — add repo-verified, sourced comparisons before
-making comparative claims.**
 
 ## More features
 
